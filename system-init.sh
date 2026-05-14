@@ -18,7 +18,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|              A script to configure the newly deployed VPS              |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-05-12                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-05-14                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -94,7 +94,7 @@ add_swap() {
 
   dd if=/dev/zero of=/swapfile bs=1M count=${DD_Count} status=none
   chmod 0600 /swapfile
-    
+
   # 格式化 Swap
   if /sbin/mkswap /swapfile >/dev/null 2>&1; then
     cp -a /etc/fstab /etc/fstab.bk
@@ -114,7 +114,7 @@ firewall() {
 
 uninstall_ufw() {
   if command -v ufw >/dev/null 2>&1; then
-    ufw status verbose > /root/logs/ufw_status_backup_$(date +%F).txt 2>/dev/null    
+    ufw status verbose > /root/logs/ufw_status_backup_$(date +%F).txt 2>/dev/null
     ufw disable
     ufw --force reset
     apt-get purge -y -q ufw
@@ -135,6 +135,20 @@ install_nftables() {
 
   configure_nftables
   [ "${nftables_cdn_mode}" = '2' ] && configure_nftables_cloudflare
+
+  [ "${nftables_ssh_mode}" = '1' ] && {
+    sed -i 's|\([[:space:]]\)# \(ip saddr.*counter.*\)|\1\2|g' /etc/nftables.conf
+  } || {
+    sed -i 's|\([[:space:]]\)# \(.*ct state new limit.*\)|\1\2|g' /etc/nftables.conf
+  }
+
+  [ "${nftables_mail_mode}" = 'y' ] && {
+    sed -i '/{mail_rule}/c\
+        # 邮件服务\
+        tcp dport { 25, 587, 465, 993, 995 } counter accept\n' /etc/nftables.conf
+  } || {
+    sed -i '/{mail_rule}/d' /etc/nftables.conf
+  }
 
   [ "${nftables_docker_mode}" = 'y' ] && {
     sed -i '/{docker_vars}/c\
@@ -207,15 +221,16 @@ table inet filter {
         icmpv6 type echo-request limit rate 4/second accept
 
         # 允许 SSH
-        tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
+        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
         # 仅允许从信任 IP 访问 SSH 端口
-        # ip saddr 1.1.1.1 tcp dport ${ssh_port} counter accept
+        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} counter accept
 
         # 允许 HTTP (80) 和 HTTPS (443)
         tcp dport { 80, 443 } counter accept
         # 若启用 HTTP/3 (QUIC)，需额外放行 UDP 443
         udp dport 443 counter accept
 
+        {mail_rule}
         # (可选) 记录并限速拦截其他所有非法入站请求
         limit rate 3/minute counter log prefix "nftables-DENIED: " drop
     }
@@ -297,9 +312,9 @@ table inet filter {
         icmpv6 type echo-request limit rate 4/second accept
 
         # 允许 SSH
-        tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
+        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
         # 仅允许从信任 IP 访问 SSH 端口
-        # ip saddr 1.1.1.1 tcp dport ${ssh_port} counter accept
+        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} counter accept
 
         # 仅限 Cloudflare IP 段访问 80/443, QUIC
         ip saddr @cloudflare_v4 tcp dport { 80, 443 } accept
@@ -307,6 +322,7 @@ table inet filter {
         ip saddr @cloudflare_v4 udp dport 443 accept
         ip6 saddr @cloudflare_v6 udp dport 443 accept
 
+        {mail_rule}
         # (可选) 记录并限速拦截其他所有非法入站请求
         limit rate 3/minute counter log prefix "nftables-DENIED: " drop
     }
@@ -347,12 +363,34 @@ read_env() {
   [ -z "${enable_nftables}" ] && read -p 'Use nftables as default firewall (y/n, default n): ' -n1 enable_nftables
   echo
   [ "${enable_nftables}" = 'y' ] && {
+    # ssh 白名单
+    read -p 'Enter the client IP address authorized for SSH access (default 0.0.0.0/0): ' ssh_allow_ip
+    check_ipv4 && nftables_ssh_mode='1' || {
+      echo -e "${ERROR} Invaild IP, use default IP."
+      nftables_ssh_mode='2'
+      ssh_allow_ip='1.1.1.1'
+    }
     echo -e "There are 2 ntfables mode:\n1. Allow http && https from all ip.\n2. Just allow http && https from cloudflare ip."
     read -p 'Enter nftables mode (1/2, default 1): ' -n1 nftables_cdn_mode
+    echo
+    read -p 'Will you use this machine as a mail server? (y/n, default n): ' -n1 nftables_mail_mode
     echo
     read -p 'Will you use Docker on this system in the future? Your answer will determine how nftables is configured to avoid rule conflicts. (y/n, default n): ' -n1 nftables_docker_mode
     echo
   }
+}
+
+check_ipv4() {
+  echo "${ssh_allow_ip}" | awk -F. '{
+    # 字段数必须为4
+    if (NF != 4) exit(1);
+    for (i = 1; i <= NF; i++) {
+      if ($i !~ /^[0-9]{1,3}$/) exit(1);
+      if (length($i) > 1 && $i ~ /^0/) exit(1);
+      if ($i < 0 || $i > 255) exit(1);
+    }
+  }'
+  return $?
 }
 
 sys_init() {
