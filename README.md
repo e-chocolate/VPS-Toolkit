@@ -22,4 +22,4 @@ export enable_nftables='n'
 bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init.sh)
 ```
 
-> Last Updated: 2026-05-12
+> Last Updated: 2026-05-15
