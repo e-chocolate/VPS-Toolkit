@@ -18,7 +18,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|              A script to configure the newly deployed VPS              |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.1  Last Updated: 2026-05-14                |"
+  echo "|                Version: 1.0.2  Last Updated: 2026-05-15                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -190,9 +190,12 @@ define DOCKER_IFS = { "docker0", "br-*" } # Docker 默认网桥和自定义网�
     sed -i '/{docker_vars}/d'  /etc/nftables.conf
   }
 
-  nft -f /etc/nftables.conf
-  systemctl enable nftables
-  systemctl restart nftables
+  nft -c -f /etc/nftables.conf
+  [ $? -eq 0 ] && {
+    nft -f /etc/nftables.conf
+    systemctl enable nftables
+    systemctl restart nftables
+  } || echo -e "${ERROR} invaild nftables config"
 }
 
 configure_nftables() {
@@ -220,15 +223,15 @@ table inet filter {
         icmp type echo-request limit rate 4/second accept
         icmpv6 type echo-request limit rate 4/second accept
 
-        # 允许 SSH
-        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
         # 仅允许从信任 IP 访问 SSH 端口
-        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} counter accept
+        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} ct state new counter accept
+        # 开放 SSH 端口
+        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
 
         # 允许 HTTP (80) 和 HTTPS (443)
-        tcp dport { 80, 443 } counter accept
+        tcp dport { 80, 443 } ct state new counter accept
         # 若启用 HTTP/3 (QUIC)，需额外放行 UDP 443
-        udp dport 443 counter accept
+        udp dport 443 ct state new limit rate 50/second burst 100 packets counter accept
 
         {mail_rule}
         # (可选) 记录并限速拦截其他所有非法入站请求
@@ -311,16 +314,16 @@ table inet filter {
         icmp type echo-request limit rate 4/second accept
         icmpv6 type echo-request limit rate 4/second accept
 
-        # 允许 SSH
-        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
         # 仅允许从信任 IP 访问 SSH 端口
-        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} counter accept
+        # ip saddr ${ssh_allow_ip} tcp dport ${ssh_port} ct state new counter accept
+        # 开放 SSH 端口
+        # tcp dport ${ssh_port} ct state new limit rate 3/minute burst 5 packets counter accept
 
         # 仅限 Cloudflare IP 段访问 80/443, QUIC
-        ip saddr @cloudflare_v4 tcp dport { 80, 443 } accept
-        ip6 saddr @cloudflare_v6 tcp dport { 80, 443 } accept
-        ip saddr @cloudflare_v4 udp dport 443 accept
-        ip6 saddr @cloudflare_v6 udp dport 443 accept
+        ip saddr @cloudflare_v4 tcp dport { 80, 443 } ct state new counter accept
+        ip6 saddr @cloudflare_v6 tcp dport { 80, 443 } ct state new counter accept
+        ip saddr @cloudflare_v4 udp dport 443 ct state new counter accept
+        ip6 saddr @cloudflare_v6 udp dport 443 ct state new counter accept
 
         {mail_rule}
         # (可选) 记录并限速拦截其他所有非法入站请求
@@ -347,7 +350,6 @@ reminder() {
     nft list ruleset
   }
   echo -e "${INFO} Remember to use \`passwd\` && \`passwd ${non_root_user}\` to change the password."
-  echo "Done"
 }
 
 read_env() {
