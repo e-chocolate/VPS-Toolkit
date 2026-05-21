@@ -6,7 +6,7 @@
 
 🛠️ A curated collection of automation scripts to simplify software installation and configuration on VPS.
 
-> All scripts are only tested on Ubuntu noble until now.
+> All scripts are only tested on Ubuntu(noble) and Debian(bookworm) until now.
 
 ## System-init
 
@@ -22,4 +22,4 @@ export enable_nftables='n'
 bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init.sh)
 ```
 
-> Last Updated: 2026-05-15
+> Last Updated: 2026-05-21
