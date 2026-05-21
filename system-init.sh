@@ -12,18 +12,33 @@ INFO="\e[0;32m[INFO]\e[0m"
 ERROR="\e[0;31m[ERROR]\e[0m"
 
 print_version() {
+  detect_os
   clear
   echo "+------------------------------------------------------------------------+"
-  echo "|     VT-System-Init for Ubuntu Linux Server, Written by Echocolate      |"
+  echo "|      VT-System-Init for Debian like Linux, Written by Echocolate       |"
   echo "+------------------------------------------------------------------------+"
   echo "|              A script to configure the newly deployed VPS              |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.2  Last Updated: 2026-05-15                |"
+  echo "|                Version: 1.0.3  Last Updated: 2026-05-21                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
+  printf "%s %36s%-12s%24s\n" "|" "Your OS: " "$os" "|"
+  echo "+------------------------------------------------------------------------+"
   sleep 2
-  cat /etc/lsb-release
+}
+
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    source /etc/os-release
+    case "$ID" in
+      ubuntu) os='Ubuntu' ;;
+      debian) os='Debian' ;;
+      *)      os="Unknown distribution: $ID" ;;
+    esac
+  else
+    os="Unknown"
+  fi
 }
 
 update() {
@@ -35,15 +50,20 @@ update() {
 
   apt-get autoremove -y -q
   apt-get clean -q
+  [ "$os"='Debian' ] && apt-get install curl fuse3 git
 }
 
 add_non_root_user() {
-  [ -z "${non_root_user}" ] && echo -e "${ERROR} Invaild username."
+  [ -z "${non_root_user}" ] && {
+    echo -e "${ERROR} Invaild username."
+    return 1
+  }
   if id "${non_root_user}" >/dev/null 2>&1; then
     echo -e "${INFO} User ${non_root_user} already exists."
   else
     useradd -m -U -s /bin/bash "${non_root_user}"
   fi
+  [ "$os"='Debian' ] && echo -e '\n# set PATH for normal user\nPATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"' >> /home/${non_root_user}/.profile
   cat > /etc/sudoers.d/normal-users <<EOF
 # User privilege specification
 ${non_root_user}	ALL=(ALL:ALL) ALL
@@ -66,10 +86,9 @@ add_swap() {
   local Disk_Avail=$(df -mP /var | awk 'NR==2 {print int($4/1024)}')
   local Swap_Total=$(free -m | awk '/^Swap:/ {print $2}')
 
+  # 判断空闲空间是否足够
   local DD_Count=1024
   local Req_Disk=5
-
-  # 判断空闲空间是否足够
   if [[ "${MemTotal}" -ge 16384 ]]; then
     DD_Count=8192; Req_Disk=27
   elif [[ "${MemTotal}" -ge 4096 ]]; then
@@ -384,7 +403,6 @@ read_env() {
 
 check_ipv4() {
   echo "${ssh_allow_ip}" | awk -F. '{
-    # 字段数必须为4
     if (NF != 4) exit(1);
     for (i = 1; i <= NF; i++) {
       if ($i !~ /^[0-9]{1,3}$/) exit(1);
