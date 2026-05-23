@@ -50,7 +50,7 @@ update() {
 
   apt-get autoremove -y -q
   apt-get clean -q
-  [ "$os"='Debian' ] && apt-get install curl fuse3 git
+  [ "$os" ='Debian' ] && apt-get install -y curl fuse3 git
 }
 
 add_non_root_user() {
