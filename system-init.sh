@@ -50,7 +50,7 @@ update() {
 
   apt-get autoremove -y -q
   apt-get clean -q
-  [ "$os" ='Debian' ] && apt-get install -y curl fuse3 git
+  [ "$os" = 'Debian' ] && apt-get install -y curl fuse3 git
 }
 
 add_non_root_user() {
@@ -63,7 +63,7 @@ add_non_root_user() {
   else
     useradd -m -U -s /bin/bash "${non_root_user}"
   fi
-  [ "$os"='Debian' ] && echo -e '\n# set PATH for normal user\nPATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"' >> /home/${non_root_user}/.profile
+  [ "$os" = 'Debian' ] && echo -e '\n# set PATH for normal user\nPATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"' >> /home/${non_root_user}/.profile
   cat > /etc/sudoers.d/normal-users <<EOF
 # User privilege specification
 ${non_root_user}	ALL=(ALL:ALL) ALL
