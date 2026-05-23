@@ -23,3 +23,9 @@ bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init
 ```
 
 > Last Updated: 2026-05-21
+
+## [System-Wide-Scripts](./system-wide-scripts/README.md)
+
+Provide some interesting functions for Linux.
+
+> Last Updated: 2026-05-23
