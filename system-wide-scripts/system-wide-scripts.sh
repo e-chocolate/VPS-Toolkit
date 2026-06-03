@@ -33,7 +33,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|       Scripts to install automatically sourced scripts on Linux        |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-05-10                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-06-03                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -41,7 +41,7 @@ print_version() {
 
 backup() {
   cd /etc/profile.d/
-  find "." -maxdepth 1 -type f -name 'vt-*' -print0 -exec cp {} ${HOME}/VT-backup/profile.d/{}$(date "+%F_%N") \;
+  find "." -maxdepth 1 -type f -name 'vt-*' -print0 -exec cp {} ${VT_bk}/profile.d/{}$(date "+%F_%N") \;
   echo ""
   cd -
 }
@@ -64,6 +64,13 @@ install() {
   config
 }
 
-[ ! -d "${HOME}/VT-backup/profile.d" ] && mkdir -p ${HOME}/VT-backup/profile.d
-[ ! -d "${HOME}/VT-logs" ] && mkdir ${HOME}/VT-logs
-install 2>&1 | tee "${HOME}/VT-logs/sws-$(date '+%F').log"
+VT_HOME="${HOME}/VT-Data"
+VT_log="${VT_HOME}/logs"
+VT_bk="${VT_HOME}/backup"
+
+[ ! -d "${VT_HOME}/" ] && mkdir ${VT_HOME}
+[ ! -d "${VT_log}/" ] && mkdir ${VT_log}
+[ ! -d "${VT_bk}/" ] && mkdir ${VT_bk}
+
+[ ! -d "${VT_bk}/profile.d" ] && mkdir "${VT_bk}/profile.d"
+install 2>&1 | tee "${VT_log}/sws-$(date '+%F').log"

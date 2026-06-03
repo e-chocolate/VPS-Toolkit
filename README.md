@@ -28,4 +28,21 @@ bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init
 
 Provide some interesting functions for Linux.
 
-> Last Updated: 2026-05-23
+> Last Updated: 2026-06-03
+
+## Init
+
+The `init.sh` script will install common but essential packages on the VPS, we highly recommend you to run `init.sh` once before running the other scripts provided by VPS-Toolkit.
+
+```shell
+# Specify packages' versions as needed, or leave them blank
+export libiconv_ver='1.19'
+export mhash_ver=''
+export libmcrypt_ver=''
+export mcrypt_ver=''
+export freetype_ver=''
+
+sudo ./init.sh
+```
+
+> Last Updated: 2026-06-03
