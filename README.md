@@ -46,3 +46,9 @@ sudo ./init.sh
 ```
 
 > Last Updated: 2026-06-03
+
+## [Mail](./Mail/README.md)
+
+Scripts for installing MTA, MDA packages.
+
+> Last Updated: 2026-06-06
