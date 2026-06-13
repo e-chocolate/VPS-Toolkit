@@ -28,7 +28,7 @@ bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init
 
 Provide some interesting functions for Linux.
 
-> Last Updated: 2026-06-03
+> Last Updated: 2026-06-13
 
 ## Init
 
@@ -52,3 +52,9 @@ sudo ./init.sh
 Scripts for installing MTA, MDA packages.
 
 > Last Updated: 2026-06-06
+
+## [Web](./Web/README.md)
+
+Scripts for installing web hosting stacks.
+
+> Last Updated: 2026-06-13
