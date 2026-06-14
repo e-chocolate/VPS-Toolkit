@@ -1,0 +1,176 @@
+#!/bin/bash
+# Description: Enable rclone by daemon.
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
+export PATH
+
+NAME_BIN="rclone"
+CONF_PATH="${HOME}/.config/rclone"
+LOCAL="${HOME}/" # VPS本地挂载地址
+LOG_PATH="${HOME}/logs" # rclone日志位置
+
+Info="\033[32m[信息]\033[0m"
+Error="\033[31m[错误]\033[0m"
+RETVAL=0
+
+check_running(){
+  PIDS=$(ps -C $NAME_BIN -o pid= | grep -o '[0-9]\{1,\}')
+  PID=$(echo -e $PIDS)
+  if [ -z "${PIDS}" ]; then
+    return 1
+  else
+    return 0
+  fi
+}
+
+do_umount() {
+  # 取消挂载
+  for line in $(ls ${LOCAL})
+  do
+    df -T ${LOCAL}$line | tail -n -1 | awk '{print $2}' |  grep -i 'fuse'
+    [ $? -eq 0 ] && {
+      fusermount -qzu ${LOCAL}$line >/dev/null 2>&1
+      echo -e "${Info} 卸载${LOCAL}$line"
+    }
+  done
+}
+
+do_start(){
+  # 只挂载某件配置文件中的某个远程网盘
+  if [ -z $1 ] || [ ! -f $1 ]; then
+    echo -e "${Error} 配置文件无效!"
+    RETVAL=1
+    return $RETVAL
+  fi
+
+  local remotes_output=$($NAME_BIN --config=$1 listremotes | awk -F ':' '{print $1}')
+  read -ra remotes <<< "$(echo -e $remotes_output)"
+
+  if [ -z $2 ]; then
+    echo -e "${Error} 未指定挂载网盘!"
+    RETVAL=1
+    return $RETVAL
+  fi
+
+  if [[ "${remotes[@]}" =~ $2 ]]; then
+    if [ -z $3 ] || [ $3 = "" ] || [ $3 = "/" ]; then
+      echo -e "${Info} 全盘挂载!"
+      local path=$2
+    else
+      echo -e "${Info} 挂载 $3"
+      local path=$2_$3
+    fi
+    if [ ! -z $4 ] && [ $4 = "full" ]; then
+      vfs='--vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 2G --buffer-size 50M --vfs-read-ahead 150M'
+    else
+      vfs='--vfs-cache-mode writes'
+    fi
+
+    if [ ! -d $LOCAL$path ]; then
+      mkdir -p $LOCAL$path
+    fi
+    # fusermount -zuq $LOCAL$path >/dev/null 2>&1
+    df -T $LOCAL$path | tail -n -1 | awk '{print $2}' |  grep -i 'fuse'
+    if [ $? -eq 0 ]; then
+      echo -e "${Error} $LOCAL$path 已经被挂载!"
+      RETVAL=1
+      return $RETVAL
+    fi
+    $NAME_BIN --config=$1 mount -v $2:$3 $LOCAL$path --copy-links --allow-other --allow-non-empty --umask 022 ${vfs} --log-file="${LOG_PATH}/$path.log" --daemon
+    sleep 2s
+    df -T $LOCAL$path | tail -n -1 | awk '{print $2}' |  grep -i '^fuse'
+    if [ $? -eq 0 ]; then
+      echo -e "${Info} $NAME_BIN 挂载 $2:$3 成功!"
+    else
+      echo -e "${Error} $NAME_BIN 挂载 $2:$3 失败!"
+      RETVAL=1
+      return $RETVAL
+    fi
+  else
+    echo -e "${Error} $2 is incorrect rclone remote's name in $1!!!"
+  fi
+}
+
+do_stop(){
+  do_umount
+  check_running
+  status=$?
+  n=0
+  while [ $status -ne 1 ] && [ $n -lt 3 ]; do
+    sleep 10
+    check_running
+    status=$?
+    ((n++))
+  done
+  check_running
+  if [ $? -eq 0 ]; then
+    echo -e "${Info} 已经取消挂载，仍有后台任务(PID: $PID) 继续运行..."
+  else
+    echo -e "${Info} 已停止..."
+  fi
+}
+
+do_status(){
+  check_running
+  if [[ $? -eq 0 ]]; then
+    echo -e "${Info} $NAME_BIN (PID: $PID) 正在运行..."
+  else
+    echo -e "${Info} $NAME_BIN 未运行 !"
+    RETVAL=1
+  fi
+}
+
+do_restart(){
+  do_stop
+  sleep 2s
+  if [ -z $PID]; then
+    do_start $1 $2 $3 $4
+  else
+    echo -e "仍有任务(PID: $PID) 后台运行...启动失败"
+  fi
+}
+
+list_remotes() {
+  local remotes_output=$($NAME_BIN --config=$1 listremotes | awk -F ':' '{print $1}')
+  read -ra remotes <<< "$(echo -e $remotes_output)"
+  if [ ${#remotes[@]} -le 0 ]; then
+    echo -e "${Error} Cannot find any rclone remotes. Exiting..."
+    RETVAL=1
+    exit $RETVAL
+  fi
+  for remote in "${remotes[@]}"; do
+    do_start $1 $remote '/' 'full'
+    if [ $? -ne 0 ]; then
+      RETVAL=1
+      exit $RETVAL
+    fi
+  done
+}
+
+systemd_mount() {
+  for file in ${CONF_PATH}/*; do
+    # 跳过目录和不存在的情况
+    [[ -f "$file" ]] && list_remotes $file
+  done
+}
+
+if [ ! -d ${LOG_PATH} ]; then
+  mkdir -p ${LOG_PATH}
+fi
+
+case "$1" in
+  start|stop|restart|status)
+    if [[ $1 == "start" || $1 == "restart" ]]; then
+      do_$1 $2 $3 $4 $5
+    else
+      do_$1
+    fi
+    ;;
+  systemd_mount)
+    systemd_mount
+    ;;
+  *)
+    echo -e "使用方法:\n$0 start | restart 配置文件路径 网盘名称 网盘文件夹 [full]\n$0 stop | status"
+    ;;
+esac
+exit $RETVAL
