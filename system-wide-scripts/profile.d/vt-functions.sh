@@ -230,3 +230,37 @@ gen_hex() {
   tr -dc '0-9A-F' < /dev/urandom | head -c $length
   echo
 }
+
+fix_webroot_permission() {
+  # === 参数校验 ===
+  if [ $# -lt 1 ]; then
+    echo "Usage: fix_webroot_permission <web_root> [nginx_user]" >&2
+    echo "  <web_root>   : Path to website root directory (e.g., /var/www/html)" >&2
+    echo "  [nginx_user] : Optional, NGINX user name(default: www)" >&2
+    return 1
+  fi
+
+  local web_root=$(cd "$1" && pwd)
+  local nginx_user="${VT_Nginx_User:-www}"
+
+  # 输入校验
+  if [ ! -d "$web_root" ]; then
+    echo "Error: Web root '$web_root' does not exist." >&2
+    return 1
+  fi
+
+  # 验证用户是否存在
+  if ! id "$nginx_user" &>/dev/null; then
+    echo "Error: NGINX user '$nginx_user' does not exist." >&2
+    return 1
+  fi
+
+  echo "Fixing permissions for '$web_root' with user: $nginx_user"
+
+  # 修复权限
+  find "$web_root" -type d -exec chmod 755 {} \;
+  find "$web_root" -type f -exec chmod 644 {} \;
+  chown -R "${nginx_user}:${nginx_user}" "$web_root"
+
+  echo "Permissions fixed successfully."
+}
