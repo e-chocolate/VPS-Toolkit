@@ -47,6 +47,12 @@ sudo ./init.sh
 
 > Last Updated: 2026-06-03
 
+## [Database](./Database/README.md)
+
+Scripts for installing common databases packages.
+
+> Last Updated: 2026-06-20
+
 ## [Mail](./Mail/README.md)
 
 Scripts for installing MTA, MDA packages.
