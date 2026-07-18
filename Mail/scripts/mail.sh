@@ -46,7 +46,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|               Scripts to install mail packages on Linux                |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-06-05                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-07-18                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -111,6 +111,37 @@ enter_db_port() {
   [ -z ${port} ] && port=$1
 }
 
+enter_certificate_path() {
+  read -p $'\e[0;33mSet SSL Certificate (y/n, default n): \e[0m' -n1 ssl_choice
+  echo
+  if [ "${ssl_choice}" = 'y' ]; then
+    certificate_flag='True'
+    while :;do
+      echo -en "\e[0;33mPlease enter full path to SSL Certificate file: \e[0m"
+      read ssl_certificate
+      if [ "${ssl_certificate}" = "" ]; then
+        echo -e "${ERROR} SSL Certificate file cannot be empty!"
+      else
+        break
+      fi
+    done
+    while :;do
+      echo -en "\e[0;33mPlease enter full path to SSL Certificate Key file: \e[0m"
+      read ssl_certificate_key
+      if [ "${ssl_certificate_key}" = "" ]; then
+        echo -e "${ERROR} SSL Certificate Key file cannot be empty!"
+      else
+        break
+      fi
+    done
+  else
+    certificate_flag='False'
+    ssl_certificate=''
+    ssl_certificate_key=''
+    return 0
+  fi
+}
+
 enter_domains() {
   [ ! -z "${domains}" ] && return 0
   domains=()
@@ -163,13 +194,14 @@ detect_os
   exit 1
 }
 choose_database
+enter_certificate_path
 enter_domains
 echo -e "[Starting time: `date +'%Y-%m-%d %H:%M:%S'`]"
 TIME_START=$(date +%s)
 determine_path
 add_user
 
-"${Mail_Current_PATH}/postfix.sh" ${db_type} ${host} ${port} ${user} ${password} ${dbname}
+"${Mail_Current_PATH}/postfix.sh" ${certificate_flag} ${ssl_certificate} ${ssl_certificate_key} ${db_type} ${host} ${port} ${user} ${password} ${dbname}
 [ $? -eq 0 ] && echo -e "${INFO} postfix 安装成功."
 
 "${Mail_Current_PATH}/opendkim.sh" "VT" "${domains[@]}"

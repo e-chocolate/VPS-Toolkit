@@ -186,6 +186,10 @@ configure_postfix() {
     cat ${Postfix_Parent_PATH}/conf-default/postfix/main.cf > /etc/postfix/main.cf
     cat ${Postfix_Parent_PATH}/conf-default/postfix/master.cf > /etc/postfix/master.cf
   }
+  [ ${certificate_flag} = 'True' ] && {
+    sed -i "s|\(^smtpd_tls_cert_file.*\)|#\1\nsmtpd_tls_cert_file=$ssl_certificate|g" /etc/postfix/main.cf
+    sed -i "s|\(^smtpd_tls_key_file.*\)|#\1\nsmtpd_tls_key_file=$ssl_certificate_key|g" /etc/postfix/main.cf
+  }
   chmod -R o-rwx /etc/postfix
 }
 
@@ -205,6 +209,14 @@ install() {
   sleep_stop 3
   configure_postfix
   [ "${start_now}" = "y" ] && sleep_start 3
+}
+
+certificate_flag="$1"
+shift
+[ ${certificate_flag} = 'True' ] && {
+  ssl_certificate="$1"
+  ssl_certificate_key="$2"
+  shift 2
 }
 
 [ $# -eq 6 ] && {
