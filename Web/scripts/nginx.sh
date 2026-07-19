@@ -17,7 +17,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|                   Scripts to install Nginx on Linux                    |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-06-13                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-07-19                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -85,6 +85,11 @@ read_parameters() {
   # 是否启用 Lua
   read -p $'\e[0;33mEnable Nginx Lua module(y,n default y): \e[0m' -n1 nginx_lua
   echo
+  [ "${nginx_lua}" != 'n' ] && {
+    # 是否启用 set-misc-nginx-module
+    read -p $'\e[0;33mInstall nginx-mod-http-set-misc package(y,n default n): \e[0m' -n1 nginx_misc
+    echo
+  }
   # 是否启用 Brotli
   read -p $'\e[0;33mEnable Nginx Brotli module(y,n default n): \e[0m' -n1 nginx_brotli
   echo
@@ -241,6 +246,18 @@ configure_lua() {
   cd -
 }
 
+download_nginx_mod_http_set_misc() {
+  cd "${VT_download}/nginx"
+  local http_set_misc_version="${HttpSetMisc_ver:-$(get_github_latest 'openresty/set-misc-nginx-module')}"
+  wget -c -nv https://github.com/openresty/set-misc-nginx-module/archive/refs/tags/${http_set_misc_version}.tar.gz -O set-misc-nginx-module.tar.gz
+  if [ $? -ne 0 ]; then
+    echo -e "${ERROR} Download set-misc-nginx-module failed."
+    exit 1
+  fi
+  cd "${VT_build}/nginx/module"
+  mkdir set_misc_nginx && tar zxf "${VT_download}/nginx/set-misc-nginx-module.tar.gz" --strip-components=1 --directory=set_misc_nginx
+}
+
 download_nginx_brotli() {
   cd "${VT_build}/nginx/module"
 
@@ -358,6 +375,10 @@ make_nginx() {
   [ "${nginx_lua}" = 'n' ] && with_lua='' || {
     download_nginx_lua
     configure_lua
+    [ "${nginx_misc}" = 'y' ] && {
+      download_nginx_mod_http_set_misc
+      local with_misc="--add-module=${VT_build}/nginx/module/set_misc_nginx"
+    }
   }
   [ "${nginx_brotli}" = 'y' ] && {
     apt-get --no-install-recommends install -y brotli
@@ -404,12 +425,14 @@ make_nginx() {
     --with-stream_ssl_preread_module \
     --with-http_realip_module \
     --with-http_addition_module \
+    --with-http_auth_request_module \
     --with-openssl=${VT_build}/nginx/dependency/openssl \
     --with-openssl-opt='enable-weak-ssl-ciphers' \
     --with-pcre=${VT_build}/nginx/dependency/pcre2 --with-pcre-jit \
     --with-zlib=${VT_build}/nginx/dependency/zlib \
     --with-ld-opt=-Wl,-rpath,/usr/local/luajit/lib \
     ${with_lua} \
+    ${with_misc} \
     ${with_brotli} \
     ${with_vts} \
     ${with_geoip} \

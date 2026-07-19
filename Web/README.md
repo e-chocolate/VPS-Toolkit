@@ -41,7 +41,7 @@ export maxmind_license_key=''
 ./scripts/nginx.sh
 ```
 
-> Last Updated: 2026-06-13
+> Last Updated: 2026-07-19
 
 ## PHP
 
