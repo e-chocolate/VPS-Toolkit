@@ -128,7 +128,7 @@ install_dependency() {
     date -Iseconds > "${VT_log}/VT_INIT_FLAG"
     echo -e "${INFO} All dependencies installed successfully."
   else
-    echo -e "${ERROR} Failed to install some dependencies. Check '${VT_log}/init.log' for details."
+    echo -e "${ERROR} Failed to install some dependencies. Check '${VT_log}/init-$(date '+%F').log' for details."
   fi
 }
 
