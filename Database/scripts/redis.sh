@@ -182,7 +182,7 @@ make_redis() {
   export DISABLE_WERRORS=yes
 
   # export_make_env
-  make -j `grep 'processor' /proc/cpuinfo | wc -l` all make all USE_SYSTEMD=yes
+  make -j `grep 'processor' /proc/cpuinfo | wc -l` all USE_SYSTEMD=yes
   make PREFIX=/usr/local/redis install
   mkdir -p "${Redis_HOME}/etc/"
   \cp redis.conf "${Redis_HOME}/etc/"
