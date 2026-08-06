@@ -1,13 +1,21 @@
 [Unit]
-Description=Redis
+Description=Advanced key-value store (Redis)
 After=network.target
+Documentation=https://redis.io/
 
 [Service]
-Type=forking
+User=redis
+Group=redis
+Type=notify
 WorkingDirectory=/usr/local/redis
-ExecStart=/usr/local/redis/bin/redis-server /usr/local/redis/etc/redis-full.conf
+RuntimeDirectory=redis
+RuntimeDirectoryMode=0750
+ExecStart=/usr/local/redis/bin/redis-server /usr/local/redis/etc/redis.conf
 ExecStop=/usr/local/redis/bin/redis-cli shutdown
-PrivateTmp=false
+Restart=always
+RestartSec=5s
+TimeoutStopSec=60s
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
