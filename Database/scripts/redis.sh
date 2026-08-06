@@ -17,7 +17,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|                 A script to install the redis on Linux                 |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-06-20                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-08-06                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -93,7 +93,7 @@ enter_overcommit() {
   echo -en "\e[0;33mEnable always overcommit memory(y/n, default y): \e[0m"
   read -n1 overcommit_memory
   echo
-  [ "${overcommit_memory}" = 'y' ] && check_overcommit
+  [ "${overcommit_memory}" != 'n' ] && check_overcommit
 }
 
 check_overcommit() {
@@ -105,10 +105,16 @@ check_overcommit() {
   fi
 }
 
+enter_unix_socket() {
+  echo -en "\e[0;33mListen on a unix socket(y/n, deafult n): \e[0m"
+  read -n1 enable_unix_socket
+  echo
+}
+
 install_llvm() {
   LLVM_version="${LLVM_ver:-}"
   [ -z ${LLVM_version} ] && {
-    echo "${INFO} No need to install/update LLVM."
+    echo -e "${INFO} No need to install/update LLVM."
     return 0
   }
   apt-get update
@@ -127,7 +133,35 @@ install_llvm() {
   }
 }
 
+export_make_env() {
+  export CC=$(which gcc)
+  export CXX=$(which g++)
+
+  export AR=$(which gcc-ar)
+  export RANLIB=$(which gcc-ranlib)
+
+  export CMAKE_C_COMPILER_AR=$(which gcc-ar)
+  export CMAKE_CXX_COMPILER_AR=$(which gcc-ar)
+  export CMAKE_C_COMPILER_RANLIB=$(which gcc-ranlib)
+  export CMAKE_CXX_COMPILER_RANLIB=$(which gcc-ranlib)
+}
+
+add_user() {
+  if id redis >/dev/null 2>&1; then
+    echo -e "${INFO} User redis already exists."
+  else
+    if getent group redis &>/dev/null; then
+      useradd -r -g redis -s /sbin/nologin -d "${Redis_Persistence}" -M redis 
+    else
+      useradd -r -s /sbin/nologin -d "${Redis_Persistence}" -M redis
+    fi
+  fi
+  [ ! -d "${Redis_Persistence}" ] && mkdir -p "${Redis_Persistence}"
+  chown -R redis:redis "${Redis_Persistence}" && chmod 750 "${Redis_Persistence}"
+}
+
 make_redis() {
+  apt-get --no-install-recommends install -y libsystemd-dev
   cd "${VT_download}"
   echo "Build Redis from source..."
   local redis_version="${redis_ver:-$(get_github_latest 'redis/redis')}"
@@ -137,7 +171,7 @@ make_redis() {
     exit 1
   fi
 
-  cd ${VT_build}
+  cd "${VT_build}"
   rm -rf redis && mkdir redis
   tar zxf "${VT_download}/redis.tar.gz" --strip-components=1 --directory=redis
 
@@ -147,29 +181,39 @@ make_redis() {
   export INSTALL_RUST_TOOLCHAIN=yes
   export DISABLE_WERRORS=yes
 
-  make -j `grep 'processor' /proc/cpuinfo | wc -l` all
+  # export_make_env
+  make -j `grep 'processor' /proc/cpuinfo | wc -l` all USE_SYSTEMD=yes
   make PREFIX=/usr/local/redis install
-  mkdir -p /usr/local/redis/etc/
-  \cp redis.conf redis-full.conf /usr/local/redis/etc/
-  sed -i 's/daemonize no/daemonize yes/g' /usr/local/redis/etc/redis.conf
-  sed -i 's#^pidfile /var/run/redis_6379.pid#pidfile /var/run/redis.pid#g' /usr/local/redis/etc/redis.conf
-
-  sed -i 's#include redis.conf#include ./etc/redis.conf#g' /usr/local/redis/etc/redis-full.conf
-  sed -i 's#loadmodule .*\/#loadmodule ./lib/redis/modules/#g' /usr/local/redis/etc/redis-full.conf
+  mkdir -p "${Redis_HOME}/etc/"
+  \cp redis.conf "${Redis_HOME}/etc/"
+  [ -f 'redis-full.conf' ] && \cp redis-full.conf "${Redis_HOME}/etc/"
+  sed -i 's|\(^pidfile /var/run/redis_6379.pid\)|# \1\npidfile /run/redis/redis.pid|g' "${Redis_HOME}/etc/redis.conf"
+  sed -i 's|\(^# supervised.*\)|\1\nsupervised systemd|g' "${Redis_HOME}/etc/redis.conf"
+  sed -i "s|\(^dir.*\)|# \1\n dir ${Redis_Persistence}/|g" "${Redis_HOME}/etc/redis.conf"
+  [ "${enable_unix_socket}" = 'y' ] && {
+    sed -i 's|\(^# \+unixsocket .*\)|\1\nunixsocket /run/redis/redis.sock|g' "${Redis_HOME}/etc/redis.conf"
+    sed -i 's/\(^# \+unixsocketperm .*\)/\1\nunixsocketperm 770/g' "${Redis_HOME}/etc/redis.conf"
+  }
+  [ -f "${Redis_HOME}/etc/redis-full.conf" ] && {
+    sed -i 's#include redis.conf#include ./etc/redis.conf#g' "${Redis_HOME}/etc/redis-full.conf"
+    sed -i 's#loadmodule .*\/#loadmodule ./lib/redis/modules/#g' "${Redis_HOME}/etc/redis-full.conf"
+  }
 }
 
 install_redis_service() {
   cat "${Redis_Parent_PATH}/service/redis.service" > /etc/systemd/system/redis.service
+  [ -f "${Redis_HOME}/etc/redis-full.conf" ] && sed -i 's/redis.conf/redis-full.conf/g' /etc/systemd/system/redis.service
+  [ "${enable_acl}" = 'y' ] && sed -i 's|\(^ExecStop.*\)|# \1\nExecStop=/bin/kill -s TERM $MAINPID|g' /etc/systemd/system/redis.service
   systemctl daemon-reload && systemctl enable redis.service
   systemctl start redis.service
   sleep 5
 }
 
 check_redis() {
-  if [[ -s /usr/local/redis/bin/redis-server && -s /usr/local/redis/bin/redis-cli && -s /usr/local/redis/etc/redis-full.conf ]]; then
+  if [[ -s "${Redis_HOME}/bin/redis-server" && -s "${Redis_HOME}/bin/redis-cli" && -s "${Redis_HOME}/etc/redis.conf" ]]; then
     [ "${enable_acl}" = 'y' ] \
-    && echo -e "\e[0;32m`/usr/local/redis/bin/redis-cli -h 127.0.0.1 -p 6379 --user admin INFO`\e[0m" \
-    || echo -e "\e[0;32m`/usr/local/redis/bin/redis-cli INFO`\e[0m"
+    && echo -e "\e[0;32m`"${Redis_HOME}/bin/redis-cli" -h 127.0.0.1 -p 6379 --user admin INFO`\e[0m" \
+    || echo -e "\e[0;32m`"${Redis_HOME}/bin/redis-cli" INFO`\e[0m"
   else
     echo -e "${ERROR} Redis install failed. Check ${VT_log}/redis.log for more info."
   fi
@@ -183,8 +227,8 @@ enter_acl() {
 }
 
 acl() {
-  echo "user default off" > /usr/local/redis/etc/users.acl
-  sed -i 's|# aclfile /etc/redis/users.acl|aclfile ./etc/users.acl|g' /usr/local/redis/etc/redis.conf
+  echo "user default off" > "${Redis_Persistence}/users.acl"
+  sed -i 's|\(# aclfile /etc/redis/users.acl\)|\1\naclfile ./users.acl|g' "${Redis_HOME}/etc/redis.conf"
   printf "\e[0;32m%-20s : %s\e[0m\n" 'username' 'password'
   acl_user 'admin' '~*' '&*' '+@all'
   acl_user 'readonly' '~app:* ~stats:*' '&app.' '+@read +@pubsub -publish -flushall -flushdb -config -debug -module -slaveof'
@@ -192,25 +236,25 @@ acl() {
 
 acl_user() {
   user=$1
-  if [ -z '${user}' ]; then
-    echo -e " \e[0;31mWrong: No username.\e[0m"
+  if [ -z "${user}" ]; then
+    echo -e " ${ERROR} Wrong: No username."
     return 1
   fi
   keys=$2
-  if [ -z '${keys}' ]; then
+  if [ -z "${keys}" ]; then
     keys='~app:* ~session:* ~cache:*'
   fi
   channels=$3
-  if [ -z '${channels}' ]; then
+  if [ -z "${channels}" ]; then
     channels='&app.* &notifications.*'
   fi
   commands=$4
-  if [ -z '${commands}' ]; then
+  if [ -z "${commands}" ]; then
     commands='+@read +@write +@pubsub -flushall -flushdb -config -debug -module -slaveof -save -bgsave'
   fi
   local pd=$(tr -dc 'A-Za-z0-9!@#$%^&*()_+-=' < /dev/urandom | head -c 12)
   local sha256pd=$(echo -n "${pd}" | sha256sum | awk '{print $1}')
-  echo "user ${user} on #${sha256pd} ${keys} ${channels} ${commands}" >> /usr/local/redis/etc/users.acl
+  echo "user ${user} on #${sha256pd} ${keys} ${channels} ${commands}" >> "${Redis_Persistence}/users.acl"
   printf "%-20s : %s\n" $1 $pd
   [ ${user} = 'admin' ] && export REDISCLI_AUTH=${pd}
 }
@@ -219,6 +263,7 @@ install() {
   print_version
   determine_path
   enter_overcommit
+  enter_unix_socket
   enter_acl
   echo -e "[Starting time: `date +'%Y-%m-%d %H:%M:%S'`]"
   TIME_START=$(date +%s)
@@ -230,6 +275,7 @@ install() {
   fi
   install_llvm
   make_redis
+  add_user
   [ "${enable_acl}" = 'y' ] && acl
   install_redis_service
   check_redis
@@ -248,4 +294,6 @@ VT_build="${VT_HOME}/build"
 [ ! -d "${VT_download}/" ] && mkdir ${VT_download}
 [ ! -d "${VT_build}/" ] && mkdir ${VT_build}
 
+Redis_HOME='/usr/local/redis'
+Redis_Persistence='/var/lib/redis'
 install 2>&1 | tee "${VT_log}/redis.log"
