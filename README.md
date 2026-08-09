@@ -57,7 +57,7 @@ Scripts for installing common databases packages.
 
 Scripts for installing MTA, MDA packages.
 
-> Last Updated: 2026-06-06
+> Last Updated: 2026-08-09
 
 ## [Web](./Web/README.md)
 

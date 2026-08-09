@@ -39,6 +39,7 @@ detect_os() {
   fi
 }
 
+user_auth=("sql" "ldap")
 db=("mysql" "postgresql")
 db_packages=("dovecot-mysql" "dovecot-pgsql")
 
@@ -51,6 +52,39 @@ enter_domains() {
   done
 
   echo -e "${INFO} Received ${#domains[@]} domains."
+}
+
+choose_auth() {
+  echo -e "You have the following options for user authentication."
+  for ((i=0; i<${#user_auth[@]}; i++)); do
+    echo -e "\e[0;32m$((i+1))\e[0m: ${user_auth[i]}"
+  done
+  echo -en "Enter your choice(default 1): "
+  read -r auth_select
+  if [[ ! "$auth_select" =~ ^[0-9]+$ ]] || [ "$auth_select" -lt 1 ] || [ "$auth_select" -gt "$i" ]; then
+    echo -e "\e[0;31mInvalid choice\e[0m, default 1"
+    auth_select=1
+  fi
+  if [ ${user_auth[$((auth_select-1))]} = 'sql' ]; then
+    auth_type='sql'
+    choose_database
+  elif [ ${user_auth[$((auth_select-1))]} = 'ldap' ]; then
+    auth_type='ldap'
+    enter_ldap_prameters
+  else
+    auth_type='none'
+  fi
+}
+
+enter_ldap_prameters() {
+  echo -en "\e[0;33mEnter the uris(e.g. ldaps://ldap.example.com:6360): \e[0m"
+  read -r uris
+  echo -en "\e[0;33mEnter the Base DN(e.g. dc=example,dc=com): \e[0m"
+  read -r base_dn
+  echo -en "\e[0;33mEnter the username: \e[0m"
+  read -r uid
+  echo -en "\e[0;33mEnter the password: \e[0m"
+  read -r dnpass
 }
 
 choose_database() {
@@ -82,9 +116,8 @@ enter_db_prameters() {
     enter_db_port "3306"
   elif [ "${db_type}" = 'pgsql' ]; then
     enter_db_port "5432"
-    db_type='pgsql'
   else
- echo -en "" # PASS
+    echo -en "" # PASS
   fi
   echo -en "\e[0;33mEnter the username: \e[0m"
   read -r user
@@ -106,9 +139,15 @@ install_dovecot() {
     dovecot-imapd \
     dovecot-pop3d \
     dovecot-lmtpd \
-    "dovecot-${db_type}" \
   ;
   do apt-get --no-install-recommends install -y $packages; done
+  if [ ${auth_type} = 'sql' ]; then
+    apt-get --no-install-recommends install -y "dovecot-${db_type}"
+  elif [ ${auth_type} = 'ldap' ]; then
+    apt-get --no-install-recommends install -y "dovecot-ldap"
+  else
+    echo -en ""
+  fi
   sleep 2
   systemctl stop dovecot
 }
@@ -148,8 +187,25 @@ configure_dovecot() {
     [ -f "${Dovecot_Parent_PATH}/conf/dovecot/conf.d/${file}" ] && cat "${Dovecot_Parent_PATH}/conf/dovecot/conf.d/${file}" > "${dovecot_conf_path}/conf.d/${file}"
   done
 
-  sed -i "s|driver = {driver}|driver = ${db_type}|g" "${dovecot_conf_path}/dovecot-sql.conf.ext"
-  sed -i "s|connect = host={host} port={port} dbname={dbname} user={user} password={password} connect_timeout=10|connect = host=${host} port=${port} dbname=${dbname} user=${user} password=${password} connect_timeout=10|g" "${dovecot_conf_path}/dovecot-sql.conf.ext"
+  if [ ${auth_type} = 'sql' ]; then
+    sed -i 's/^#!include \+auth-sql.conf.ext/!include auth-sql.conf.ext/g' "${dovecot_conf_path}/conf.d/10-auth.conf"
+    sed -i "s|driver = {driver}|driver = ${db_type}|g" "${dovecot_conf_path}/dovecot-sql.conf.ext"
+    sed -i "s|connect = host={host} port={port} dbname={dbname} user={user} password={password} connect_timeout=10|connect = host=${host} port=${port} dbname=${dbname} user=${user} password=${password} connect_timeout=10|g" "${dovecot_conf_path}/dovecot-sql.conf.ext"
+  elif [ ${auth_type} = 'ldap' ]; then
+    sed -i 's/^#!include \+auth-ldap.conf.ext/!include auth-ldap.conf.ext/g' "${dovecot_conf_path}/conf.d/10-auth.conf"
+    [ -f "${Dovecot_Parent_PATH}/conf/dovecot/dovecot-ldap.conf.ext" ] && cat "${Dovecot_Parent_PATH}/conf/dovecot/dovecot-ldap.conf.ext" > "${dovecot_conf_path}/dovecot-ldap.conf.ext"
+    [ -f "${Dovecot_Parent_PATH}/conf/dovecot/conf.d/auth-ldap.conf.ext" ] && cat "${Dovecot_Parent_PATH}/conf/dovecot/conf.d/auth-ldap.conf.ext" > "${dovecot_conf_path}/conf.d/auth-ldap.conf.ext"
+    sed -i "s|{uris}|${uris}|g" "${dovecot_conf_path}/dovecot-ldap.conf.ext"
+    sed -i "s|{base_dn}|${base_dn}|g" "${dovecot_conf_path}/dovecot-ldap.conf.ext"
+    sed -i "s|{uid}|${uid}|g" "${dovecot_conf_path}/dovecot-ldap.conf.ext"
+    sed -i "s|{dnpass}|${dnpass}|g" "${dovecot_conf_path}/dovecot-ldap.conf.ext"
+  else
+    echo -en ""
+  fi
+  [[ ${certificate_flag} = 'True' ]] && {
+    sed -i "s|\(^ssl_cert.*\)|#\1\nssl_cert = <$ssl_certificate|g" /etc/dovecot/conf.d/10-ssl.conf
+    sed -i "s|\(^ssl_key.*\)|#\1\nssl_key = <$ssl_certificate_key|g" /etc/dovecot/conf.d/10-ssl.conf
+  }
   chown -R vmail:dovecot /etc/dovecot
   chmod -R o-rwx /etc/dovecot
   create_mail_dir
@@ -162,9 +218,9 @@ install() {
     echo -e "${ERROR} Only support Ubuntu and Debian."
     exit 1
   }
-  [ -z ${db_type} ] && {
+  [ -z ${auth_type} ] && {
     enter_domains
-    choose_database
+    choose_auth
   }
   install_dovecot
   determine_path
@@ -172,17 +228,34 @@ install() {
   configure_dovecot
 }
 
-[ $# -ge 6 ] && {
+certificate_flag="$1"
+shift
+[[ ${certificate_flag} = 'True' ]] && {
+  ssl_certificate="$1"
+  ssl_certificate_key="$2"
+  shift 2
+}
+
+auth_type="$1"
+shift
+if [ "${auth_type}" = 'ldap' ]; then
+  uris="$1"
+  base_dn="$2"
+  uid="$3"
+  dnpass="$4"
+  shift 4
+elif [ "${auth_type}" = 'sql' ]; then
   db_type="$1"
   host="$2"
   port="$3"
   user="$4"
   password="$5"
   dbname="$6"
-
   shift 6
-  domains=("$@")
-}
+else
+  echo -en ""
+fi
+domains=("$@")
 
 VT_HOME="${HOME}/VT-Data"
 VT_log="${VT_HOME}/logs"

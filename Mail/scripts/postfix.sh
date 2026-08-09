@@ -43,6 +43,18 @@ determine_path() {
 db=("mysql" "postgresql")
 db_packages=("postfix-mysql" "postfix-pgsql")
 
+enter_ldap_prameters() {
+  echo -en "\e[0;33mEnter the server LDAP hosts(e.g. ldaps://ldap.example.com:6360): \e[0m"
+  read -r server_host
+  server_port=$(echo -en "server_host" | awk -F ':' '{print $NF}')
+  echo -en "\e[0;33mEnter the Base DN(e.g. dc=example,dc=com): \e[0m"
+  read -r base_dn
+  echo -en "\e[0;33mEnter the username: \e[0m"
+  read -r uid
+  echo -en "\e[0;33mEnter the password: \e[0m"
+  read -r dnpass
+}
+
 choose_database() {
   echo -e "You have the following options for lookup tables."
   for ((i=0; i<${#db[@]}; i++)); do
@@ -119,29 +131,54 @@ password = ${password}
 dbname = ${dbname}
 EOF
   )
-  common_lookups "${db_type}"
+  domains_lookups "${db_type}"
+  if [[ ${enable_ldap_lookup_table} = 'y' ]]; then
+    maps_ldap_lookups 'ldap'
+  else
+    maps_sql_lookups "${db_type}"
+  fi
   if [ "${db_type}" = 'mysql' ]; then
-    mysql_lookups
+    alias_mysql_lookups
   elif [ "${db_type}" = 'pgsql' ]; then
-    postgresql_lookups
+    alias_pgsql_lookups
   else
     echo -en "" # PASS
   fi
 }
 
-common_lookups() {
+domains_lookups() {
   cat > "/etc/postfix/$1-virtual-mailbox-domains.cf" <<EOF
 $base_db_info
 query = SELECT 1 FROM virtual_domains WHERE name='%s';
 EOF
+}
 
+maps_sql_lookups() {
   cat > "/etc/postfix/$1-virtual-mailbox-maps.cf" <<EOF
 $base_db_info
 query = SELECT 1 FROM virtual_users WHERE email='%s';
 EOF
 }
 
-mysql_lookups() {
+maps_ldap_lookups() {
+  cat > "/etc/postfix/$1-virtual-mailbox-maps.cf" <<EOF
+server_host = ${server_host}
+server_port = ${server_port}
+version = 3
+
+timeout = 5
+
+bind = yes
+bind_dn = uid=${uid},ou=people,${base_dn}
+bind_pw = ${dnpass}
+
+search_base = ou=people,{base_dn}
+query_filter = (&(objectClass=person)(mail=%s))
+result_attribute = mail
+EOF
+}
+
+alias_mysql_lookups() {
   cat > /etc/postfix/mysql-virtual-alias-maps.cf <<EOF
 $base_db_info
 query = SELECT destination
@@ -153,7 +190,7 @@ query = SELECT destination
 EOF
 }
 
-postgresql_lookups() {
+alias_pgsql_lookups() {
   cat > "/etc/postfix/pgsql-virtual-alias-maps.cf" <<EOF
 $base_db_info
 query = SELECT destination
@@ -176,9 +213,13 @@ configure_postfix() {
   cat /etc/postfix/master.cf > ${Postfix_Parent_PATH}/conf-default/postfix/master.cf
   cat "${Postfix_Parent_PATH}/conf/postfix/main.cf" > /etc/postfix/main.cf
   cat "${Postfix_Parent_PATH}/conf/postfix/master.cf" > /etc/postfix/master.cf
-  sed -i "s/{OS}/${os}/g" /etc/postfix/main.cf
+  sed -i "s@{OS}@${os}@g" /etc/postfix/main.cf
   sed -i "s|virtual_mailbox_domains =.*|virtual_mailbox_domains = ${db_type}:/etc/postfix/${db_type}-virtual-mailbox-domains.cf|g" /etc/postfix/main.cf
-  sed -i "s|virtual_mailbox_maps =.*|virtual_mailbox_maps = ${db_type}:/etc/postfix/${db_type}-virtual-mailbox-maps.cf|g" /etc/postfix/main.cf
+  if [[ ${enable_ldap_lookup_table} = 'y' ]]; then
+    sed -i "s|virtual_mailbox_maps =.*|virtual_mailbox_maps = ldap:/etc/postfix/ldap-virtual-mailbox-maps.cf|g" /etc/postfix/main.cf
+  else
+    sed -i "s|virtual_mailbox_maps =.*|virtual_mailbox_maps = ${db_type}:/etc/postfix/${db_type}-virtual-mailbox-maps.cf|g" /etc/postfix/main.cf
+  fi
   sed -i "s|virtual_alias_maps =.*|virtual_alias_maps = ${db_type}:/etc/postfix/${db_type}-virtual-alias-maps.cf|g" /etc/postfix/main.cf
   getFQDN
   [ $? -eq 0 ] && sed -i "s|example\.org|$fqdn|g" /etc/postfix/main.cf || {
@@ -186,7 +227,7 @@ configure_postfix() {
     cat ${Postfix_Parent_PATH}/conf-default/postfix/main.cf > /etc/postfix/main.cf
     cat ${Postfix_Parent_PATH}/conf-default/postfix/master.cf > /etc/postfix/master.cf
   }
-  [ ${certificate_flag} = 'True' ] && {
+  [[ ${certificate_flag} = 'True' ]] && {
     sed -i "s|\(^smtpd_tls_cert_file.*\)|#\1\nsmtpd_tls_cert_file=$ssl_certificate|g" /etc/postfix/main.cf
     sed -i "s|\(^smtpd_tls_key_file.*\)|#\1\nsmtpd_tls_key_file=$ssl_certificate_key|g" /etc/postfix/main.cf
   }
@@ -194,10 +235,16 @@ configure_postfix() {
 }
 
 install() {
+  [ -z ${enable_ldap_lookup_table} ] && {
+    read -p $'\e[0;33mUsing ldap as Postfix lookup table (y/n, default n): \e[0m' -n1 enable_ldap_lookup_table
+    echo
+    [[ ${enable_ldap_lookup_table} = 'y' ]] && enter_ldap_prameters
+  }
   [ -z ${db_type} ] && {
     choose_database
     echo -e "${INFO} Ensure that you have configured the database, opendkim, opendmarc, dovecot before starting postfix."
     read -p $'\e[0;33mStart postfix immediately (y/n, default n): \e[0m' -n1 start_now
+    echo
   }
   determine_path
   detect_os
@@ -208,15 +255,26 @@ install() {
   install_postfix
   sleep_stop 3
   configure_postfix
-  [ "${start_now}" = "y" ] && sleep_start 3
+  [[ "${start_now}" = "y" ]] && sleep_start 3
 }
 
 certificate_flag="$1"
 shift
-[ ${certificate_flag} = 'True' ] && {
+[[ ${certificate_flag} = 'True' ]] && {
   ssl_certificate="$1"
   ssl_certificate_key="$2"
   shift 2
+}
+
+enable_ldap_lookup_table="$1"
+shift
+[[ ${enable_ldap_lookup_table} = 'y' ]] && {
+  server_host="$1"
+  server_port="$2"
+  base_dn="$3"
+  uid="$4"
+  dnpass="$5"
+  shift 5
 }
 
 [ $# -eq 6 ] && {

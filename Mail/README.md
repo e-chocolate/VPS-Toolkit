@@ -5,6 +5,7 @@ Usually, a mail server consists of three parts: MTA, MUA, and MDA.
 - MUA(Mail User Agent): This script doesn't intall MUA by default, but we recommend [rainloop](https://www.rainloop.net/) or [Roundcube](https://roundcube.net/).
 - MTA(Mail Transfer Agent): This script choose postfix as MTA.
 - MDA(Mail Delivery Agent): This script choose dovecot as MDA.
+- MRA (Mail Retrieval Agent): This script choose dovecot as MRA.
 
 ## How to install
 
