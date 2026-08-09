@@ -28,15 +28,16 @@ determine_path() {
 }
 
 db=("mysql" "postgresql")
+user_auth=("sql" "ldap")
 
 document() {
 <<EOF
-设计思路：
-1. 用户输入 邮件域名 等基本信息
-2. 安装 postfix
-3. 安装 opendkim 和 opendmarc
-4. 安装 dovecot
-5. 启动 postfix 和 dovecot
+  设计思路：
+  1. 用户输入 邮件域名 等基本信息
+  2. 安装 postfix
+  3. 安装 opendkim 和 opendmarc
+  4. 安装 dovecot
+  5. 启动 postfix 和 dovecot
 EOF
 }
 
@@ -46,7 +47,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|               Scripts to install mail packages on Linux                |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.1  Last Updated: 2026-07-18                |"
+  echo "|                Version: 1.0.2  Last Updated: 2026-08-09                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -63,6 +64,39 @@ detect_os() {
   else
     return 2
   fi
+}
+
+choose_auth() {
+  echo -e "You have the following options for user authentication."
+  for ((i=0; i<${#user_auth[@]}; i++)); do
+    echo -e "\e[0;32m$((i+1))\e[0m: ${user_auth[i]}"
+  done
+  echo -en "Enter your choice(default 1): "
+  read -r auth_select
+  if [[ ! "$auth_select" =~ ^[0-9]+$ ]] || [ "$auth_select" -lt 1 ] || [ "$auth_select" -gt "$i" ]; then
+    echo -e "\e[0;31mInvalid choice\e[0m, default 1"
+    auth_select=1
+  fi
+  if [ ${user_auth[$((auth_select-1))]} = 'sql' ]; then
+    auth_type='sql'
+  elif [ ${user_auth[$((auth_select-1))]} = 'ldap' ]; then
+    auth_type='ldap'
+    enter_ldap_prameters
+  else
+    auth_type='none'
+  fi
+}
+
+enter_ldap_prameters() {
+  echo -en "\e[0;33mEnter the server LDAP hosts(e.g. ldaps://ldap.example.com:6360): \e[0m"
+  read -r server_host
+  server_port=$(echo -en "server_host" | awk -F ':' '{print $NF}')
+  echo -en "\e[0;33mEnter the Base DN(e.g. dc=example,dc=com): \e[0m"
+  read -r base_dn
+  echo -en "\e[0;33mEnter the username: \e[0m"
+  read -r uid
+  echo -en "\e[0;33mEnter the password: \e[0m"
+  read -r dnpass
 }
 
 choose_database() {
@@ -142,6 +176,11 @@ enter_certificate_path() {
   fi
 }
 
+enter_ldap_lookup_table() {
+  read -p $'\e[0;33mUsing ldap as Postfix lookup table (y/n, default n): \e[0m' -n1 enable_ldap_lookup_table
+  echo
+}
+
 enter_domains() {
   [ ! -z "${domains}" ] && return 0
   domains=()
@@ -193,15 +232,17 @@ detect_os
   echo -e "${ERROR} Only support Ubuntu and Debian."
   exit 1
 }
+choose_auth
 choose_database
 enter_certificate_path
+enter_ldap_lookup_table
 enter_domains
 echo -e "[Starting time: `date +'%Y-%m-%d %H:%M:%S'`]"
 TIME_START=$(date +%s)
 determine_path
 add_user
 
-"${Mail_Current_PATH}/postfix.sh" ${certificate_flag} ${ssl_certificate} ${ssl_certificate_key} ${db_type} ${host} ${port} ${user} ${password} ${dbname}
+"${Mail_Current_PATH}/postfix.sh" ${certificate_flag} ${ssl_certificate} ${ssl_certificate_key} ${enable_ldap_lookup_table} ${server_host} ${server_port} ${base_dn} ${uid} ${dnpass} ${db_type} ${host} ${port} ${user} ${password} ${dbname}
 [ $? -eq 0 ] && echo -e "${INFO} postfix 安装成功."
 
 "${Mail_Current_PATH}/opendkim.sh" "VT" "${domains[@]}"
@@ -210,7 +251,11 @@ add_user
 "${Mail_Current_PATH}/opendmarc.sh" "VT" "${domains[@]}"
 [ $? -eq 0 ] && echo -e "${INFO} opendmarc 安装成功."
 
-"${Mail_Current_PATH}/dovecot.sh" ${db_type} ${host} ${port} ${user} ${password} ${dbname} "${domains[@]}"
+if [ "${auth_type}" = 'ldap' ]; then
+  "${Mail_Current_PATH}/dovecot.sh" ${certificate_flag} ${ssl_certificate} ${ssl_certificate_key} ${auth_type} ${server_host} ${base_dn} ${uid} ${dnpass} "${domains[@]}"
+else
+  "${Mail_Current_PATH}/dovecot.sh" ${certificate_flag} ${ssl_certificate} ${ssl_certificate_key} ${auth_type} ${db_type} ${host} ${port} ${user} ${password} ${dbname} "${domains[@]}"
+fi
 [ $? -eq 0 ] && echo -e "${INFO} dovecot 安装成功."
 
 systemctl start postfix
