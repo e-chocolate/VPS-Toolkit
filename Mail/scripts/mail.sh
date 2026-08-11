@@ -90,7 +90,7 @@ choose_auth() {
 enter_ldap_prameters() {
   echo -en "\e[0;33mEnter the server LDAP hosts(e.g. ldaps://ldap.example.com:6360): \e[0m"
   read -r server_host
-  server_port=$(echo -en "server_host" | awk -F ':' '{print $NF}')
+  server_port=$(echo -en "${server_host}" | awk -F ':' '{print $NF}')
   echo -en "\e[0;33mEnter the Base DN(e.g. dc=example,dc=com): \e[0m"
   read -r base_dn
   echo -en "\e[0;33mEnter the username: \e[0m"

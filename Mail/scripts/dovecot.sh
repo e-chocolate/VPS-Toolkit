@@ -139,6 +139,7 @@ install_dovecot() {
     dovecot-imapd \
     dovecot-pop3d \
     dovecot-lmtpd \
+    dovecot-sieve \
   ;
   do apt-get --no-install-recommends install -y $packages; done
   if [ ${auth_type} = 'sql' ]; then
@@ -206,10 +207,28 @@ configure_dovecot() {
     sed -i "s|\(^ssl_cert.*\)|#\1\nssl_cert = <$ssl_certificate|g" /etc/dovecot/conf.d/10-ssl.conf
     sed -i "s|\(^ssl_key.*\)|#\1\nssl_key = <$ssl_certificate_key|g" /etc/dovecot/conf.d/10-ssl.conf
   }
+  configure_sieve
   chown -R vmail:dovecot /etc/dovecot
   chmod -R o-rwx /etc/dovecot
   create_mail_dir
   systemctl start dovecot
+}
+
+configure_sieve() {
+  mkdir -p /etc/dovecot/sieve
+  cat > /etc/dovecot/sieve/global-aliases.sieve <<EOF
+require ["fileinto", "subaddress", "variables", "mailbox", "envelope"];
+
+if envelope :detail :matches "to" "*" {
+    
+    set :upperfirst "folder_name" "\${1}";
+    
+    fileinto :create "\${folder_name}";
+    
+    stop;
+}
+EOF
+  sievec /etc/dovecot/sieve/global-aliases.sieve
 }
 
 install() {
