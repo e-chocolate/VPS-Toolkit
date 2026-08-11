@@ -121,6 +121,9 @@ install_postfix() {
     "postfix-${db_type}" \
   ;
   do apt-get --no-install-recommends install -y $packages; done
+  if [[ ${enable_ldap_lookup_table} = 'y' ]]; then
+    apt-get --no-install-recommends install -y postfix-ldap
+  fi
 }
 
 db_lookups() {
@@ -172,7 +175,7 @@ bind = yes
 bind_dn = uid=${uid},ou=people,${base_dn}
 bind_pw = ${dnpass}
 
-search_base = ou=people,{base_dn}
+search_base = ou=people,${base_dn}
 query_filter = (&(objectClass=person)(mail=%s))
 result_attribute = mail
 EOF
