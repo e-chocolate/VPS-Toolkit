@@ -19,7 +19,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|              A script to configure the newly deployed VPS              |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.3  Last Updated: 2026-05-21                |"
+  echo "|                Version: 1.0.4  Last Updated: 2026-08-13                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -50,7 +50,7 @@ update() {
 
   apt-get autoremove -y -q
   apt-get clean -q
-  [ "$os" = 'Debian' ] && apt-get install -y curl fuse3 git
+  apt-get install -y curl fuse3 git jq
 }
 
 add_non_root_user() {
@@ -126,7 +126,7 @@ add_swap() {
 }
 
 firewall() {
-  [ "${enable_nftables}" != 'y' ] && return 0
+  [[ "${enable_nftables}" = 'n' ]] && return 0
   uninstall_ufw
   install_nftables
 }
@@ -151,17 +151,18 @@ install_nftables() {
       -o Dpkg::Options::="--force-confold" \
       nftables
   fi
+  [[ "${nftables_iptables_mode}" = 'y' ]] && apt-get install -y iptables
 
   configure_nftables
-  [ "${nftables_cdn_mode}" = '2' ] && configure_nftables_cloudflare
+  [[ "${nftables_cdn_mode}" = '2' ]] && configure_nftables_cloudflare
 
-  [ "${nftables_ssh_mode}" = '1' ] && {
+  [[ "${nftables_ssh_mode}" = '1' ]] && {
     sed -i 's|\([[:space:]]\)# \(ip saddr.*counter.*\)|\1\2|g' /etc/nftables.conf
   } || {
     sed -i 's|\([[:space:]]\)# \(.*ct state new limit.*\)|\1\2|g' /etc/nftables.conf
   }
 
-  [ "${nftables_mail_mode}" = 'y' ] && {
+  [[ "${nftables_mail_mode}" = 'y' ]] && {
     sed -i '/{mail_rule}/c\
         # 邮件服务\
         tcp dport { 25, 587, 465, 993, 995 } counter accept\n' /etc/nftables.conf
@@ -169,7 +170,7 @@ install_nftables() {
     sed -i '/{mail_rule}/d' /etc/nftables.conf
   }
 
-  [ "${nftables_docker_mode}" = 'y' ] && {
+  [[ "${nftables_docker_mode}" = 'y' ]] && {
     sed -i '/{docker_vars}/c\
 # ==========================================\
 # 定义网卡变量，方便维护\
@@ -218,7 +219,7 @@ define DOCKER_IFS = { "docker0", "br-*" } # Docker 默认网桥和自定义网�
 }
 
 configure_nftables() {
-cat > /etc/nftables.conf <<EOF
+  cat > /etc/nftables.conf <<EOF
 #!/usr/sbin/nft -f
 
 # 清理当前所有规则
@@ -272,7 +273,10 @@ EOF
 }
 
 configure_nftables_cloudflare() {
-cat > /etc/nftables.conf <<EOF
+  ipv4_addr=$(curl https://api.cloudflare.com/client/v4/ips | jq '.result.ipv4_cidrs' | tr -d '[ ]"\n' | sed 's/,/, /g' )
+  ipv6_addr=$(curl https://api.cloudflare.com/client/v4/ips | jq '.result.ipv6_cidrs' | tr -d '[ ]"\n' | sed 's/,/, /g' )
+
+  cat > /etc/nftables.conf <<EOF
 #!/usr/sbin/nft -f
 
 # 清理当前所有规则
@@ -285,36 +289,12 @@ table inet filter {
     # ============================================================
     set cloudflare_v4 {
         type ipv4_addr; flags interval;
-        elements = {
-            173.245.48.0/20,
-            103.21.244.0/22,
-            103.22.200.0/22,
-            103.31.4.0/22,
-            141.101.64.0/18,
-            108.162.192.0/18,
-            190.93.240.0/20,
-            188.114.96.0/20,
-            197.234.240.0/22,
-            198.41.128.0/17,
-            162.158.0.0/15,
-            104.16.0.0/13,
-            104.24.0.0/14,
-            172.64.0.0/13,
-            131.0.72.0/22
-        }
+        elements = { ${ipv4_addr} }
     }
 
     set cloudflare_v6 {
         type ipv6_addr; flags interval;
-        elements = {
-            2400:cb00::/32,
-            2606:4700::/32,
-            2803:f800::/32,
-            2405:b500::/32,
-            2405:8100::/32,
-            2a06:98c0::/29,
-            2c0f:f248::/32
-        }
+        elements = { ${ipv6_addr} }
     }
 
     chain input {
@@ -364,7 +344,7 @@ EOF
 }
 
 reminder() {
-  [ "${enable_nftables}" = 'y' ] && {
+  [[ "${enable_nftables}" != 'n' ]] && {
     systemctl status nftables --no-pager | grep Active
     nft list ruleset
   }
@@ -381,9 +361,9 @@ read_env() {
   [ -z "${enable_swap}" ] && read -p 'enable swap or not (y/n, default y): ' -n1 enable_swap
   echo
   # 启用 nftables
-  [ -z "${enable_nftables}" ] && read -p 'Use nftables as default firewall (y/n, default n): ' -n1 enable_nftables
+  [ -z "${enable_nftables}" ] && read -p 'Use nftables as default firewall (y/n, default y): ' -n1 enable_nftables
   echo
-  [ "${enable_nftables}" = 'y' ] && {
+  [[ "${enable_nftables}" != 'n' ]] && {
     # ssh 白名单
     read -p 'Enter the client IP address authorized for SSH access (default 0.0.0.0/0): ' ssh_allow_ip
     check_ipv4 && nftables_ssh_mode='1' || {
@@ -398,6 +378,10 @@ read_env() {
     echo
     read -p 'Will you use Docker on this system in the future? Your answer will determine how nftables is configured to avoid rule conflicts. (y/n, default n): ' -n1 nftables_docker_mode
     echo
+    [[ "${nftables_docker_mode}" = 'y' ]] && {
+      read -p 'Install iptables? Docker may need it. (y/n, default n): ' -n1 nftables_iptables_mode
+      echo
+    }
   }
 }
 
