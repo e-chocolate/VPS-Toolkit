@@ -264,3 +264,14 @@ fix_webroot_permission() {
 
   echo "Permissions fixed successfully."
 }
+
+clear_history() {
+  read -p $'\e[0;33mAre you sure you want to clear the terminal history? (y/N): \e[0m' -n1 confirm
+  echo
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    history -c && cat /dev/null > ~/.bash_history && history -w
+    echo -e "\e[0;32m[INFO]\e[0m Terminal history cleared."
+  else
+    echo -e "\e[0;32m[INFO]\e[0m Operation canceled."
+  fi
+}
