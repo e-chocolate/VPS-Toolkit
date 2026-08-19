@@ -71,6 +71,12 @@ EOF
 }
 
 configure_sshd() {
+  if grep -Eq '^ *PermitRootLogin.*' /etc/ssh/sshd_config; then
+    sed -i 's/\(^ *PermitRootLogin.*\)/#\1\nPermitRootLogin no/g' /etc/ssh/sshd_config
+  fi
+  if grep -Eq '^ *Port.*' /etc/ssh/sshd_config; then
+    sed -i 's/\(^ *Port.*\)/#\1/g' /etc/ssh/sshd_config
+  fi
   [ -z "${ssh_port}" ] && ssh_port='22'
   cat > /etc/ssh/sshd_config.d/custom_sshd.conf << EOF
 Port ${ssh_port}
