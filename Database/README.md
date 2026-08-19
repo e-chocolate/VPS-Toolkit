@@ -24,4 +24,4 @@ export redis_ver='8.8.0'
 ./scripts/redis.sh
 ```
 
-> Last Updated: 2026-06-20
+> Last Updated: 2026-08-06

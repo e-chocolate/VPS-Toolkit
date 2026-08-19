@@ -17,11 +17,36 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|           A script to install the required packages on Linux           |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.0  Last Updated: 2026-06-03                |"
+  echo "|                Version: 1.0.1  Last Updated: 2026-08-19                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
+  printf "%s %36s%-12s%24s\n" "|" "Your OS: " "$os $MAJOR_VERSION" "|"
+  echo "+------------------------------------------------------------------------+"
   sleep 2
+}
+
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    source /etc/os-release
+    case "$ID" in
+      ubuntu)
+        os='Ubuntu'
+        MAJOR_VERSION=$(echo "$VERSION_ID" | cut -d. -f1)
+      ;;
+      debian)
+        os='Debian'
+        MAJOR_VERSION=$(echo "$VERSION_ID" | cut -d. -f1)
+      ;;
+      *)
+        os="Unknown"
+        MAJOR_VERSION="Unknown"
+      ;;
+    esac
+  else
+    os="Unknown"
+    MAJOR_VERSION="Unknown"
+  fi
 }
 
 check_VT_INIT() {
@@ -119,9 +144,13 @@ install_dependency() {
   echo -e "${INFO} Proc num: $JOBS"
   status=0
   install_libiconv
-  install_mhash
-  install_libmcrypt
-  install_mcrypt
+  if [[ -n "$mhash_ver" ]]; then
+    install_mhash
+  fi
+  if [[ -n "$mcrypt_ver" ]] && [[ -n "$mcrypt_ver" ]]; then
+    install_libmcrypt
+    install_mcrypt
+  fi
   install_freetype
   if [ $status -eq 0 ]; then
     # VPS-Toolkit Init Flag
@@ -150,6 +179,8 @@ install_libiconv() {
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install libiconv."
+  } || {
+    echo -e "${INFO} Install libiconv successfully."
   }
 }
 
@@ -171,6 +202,8 @@ install_mhash() {
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install mhash."
+  } || {
+    echo -e "${INFO} Install mhash successfully."
   }
 
   ln -sf /usr/local/lib/libmhash.a         /usr/lib/libmhash.a
@@ -194,21 +227,37 @@ install_libmcrypt() {
   tar zxf "${VT_download}/libmcrypt.tar.gz" --strip-components=1 --directory=libmcrypt
 
   cd libmcrypt
-  ./configure
+  if [[ "$ID" == "debian" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 13 ]] || [[ "$ID" == "ubuntu" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 26 ]]; then
+    ./configure CFLAGS="-g -O2 -std=gnu11 -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch -include string.h -include stdlib.h -include stdio.h -DHAVE_MEMMOVE=1 -DHAVE_STRING_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STDIO_H=1"
+  else
+    ./configure
+  fi
   safe_make
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install Libmcrypt."
+  } || {
+    echo -e "${INFO} Install Libmcrypt successfully."
   }
 
   ldconfig
 
-  cd libltdl/
-  ./configure --enable-ltdl-install
-  safe_make
+  if [[ "$ID" == "debian" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 13 ]] || [[ "$ID" == "ubuntu" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 26 ]]; then
+    apt-get --no-install-recommends install -y libltdl-dev
+    ./configure --enable-ltdl-install --with-system-libltdl
+     make CFLAGS="-g -O2 -std=gnu11 -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch -include string.h -include stdlib.h -include stdio.h"
+  else
+    cd libltdl/
+    ./configure --enable-ltdl-install
+    make
+  fi
+
+  make install
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install Libmcrypt/libltdl."
+  } || {
+    echo -e "${INFO} Install Libmcrypt/libltdl successfully."
   }
 
   ln -sf /usr/local/lib/libmcrypt.la        /usr/lib/libmcrypt.la
@@ -231,11 +280,17 @@ install_mcrypt() {
   tar zxf "${VT_download}/mcrypt.tar.gz" --strip-components=1 --directory=mcrypt
 
   cd mcrypt
-  ./configure
+  if [[ "$ID" == "debian" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 13 ]] || [[ "$ID" == "ubuntu" && -n "$MAJOR_VERSION" && "$MAJOR_VERSION" -ge 26 ]]; then
+    ./configure CFLAGS="-g -O2 -std=gnu11 -Wno-implicit-function-declaration -Wno-implicit-int -Wno-builtin-declaration-mismatch -include string.h -include stdlib.h -include stdio.h -DHAVE_MEMMOVE=1 -DHAVE_STRING_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STDIO_H=1"
+  else
+    ./configure
+  fi
   safe_make
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install MCrypt."
+  } || {
+    echo -e "${INFO} Install MCrypt successfully."
   }
 }
 
@@ -257,6 +312,8 @@ install_freetype() {
   [ $? -ne 0 ] && {
     ((status+=1))
     echo -e "${ERROR} Failed to install freetype2."
+  } || {
+    echo -e "${INFO} Install freetype2 successfully."
   }
 
   cd
@@ -286,8 +343,9 @@ init() {
   mhash_version="${mhash_ver:-0.9.9.9}"
   libmcrypt_verison="${libmcrypt_ver:-2.5.8}"
   mcrypt_version="${mcrypt_ver:-2.6.8}"
-  freetype_version="${freetype_ver:-2.14.1}"
+  freetype_version="${freetype_ver:-2.14.3}"
 
+  detect_os
   print_version
   echo -e "[Starting time: `date +'%Y-%m-%d %H:%M:%S'`]"
   TIME_START=$(date +%s)
