@@ -22,7 +22,7 @@ export enable_nftables='n'
 bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init.sh)
 ```
 
-> Last Updated: 2026-05-21
+> Last Updated: 2026-08-13
 
 ## [System-Wide-Scripts](./system-wide-scripts/README.md)
 
@@ -37,21 +37,22 @@ The `init.sh` script will install common but essential packages on the VPS, we h
 ```shell
 # Specify packages' versions as needed, or leave them blank
 export libiconv_ver='1.19'
-export mhash_ver=''
-export libmcrypt_ver=''
-export mcrypt_ver=''
-export freetype_ver=''
+export freetype_ver='2.14.3'
+# mhash & mcrypt will be installed only when setting specified version
+export mhash_ver='0.9.9.9'
+export libmcrypt_ver='2.5.8'
+export mcrypt_ver='2.6.8'
 
 sudo ./init.sh
 ```
 
-> Last Updated: 2026-06-03
+> Last Updated: 2026-08-19
 
 ## [Database](./Database/README.md)
 
 Scripts for installing common databases packages.
 
-> Last Updated: 2026-06-20
+> Last Updated: 2026-08-06
 
 ## [Mail](./Mail/README.md)
 
@@ -63,7 +64,7 @@ Scripts for installing MTA, MDA packages.
 
 Scripts for installing web hosting stacks.
 
-> Last Updated: 2026-06-13
+> Last Updated: 2026-07-19
 
 ## [Tools](./Tools/README.md)
 
