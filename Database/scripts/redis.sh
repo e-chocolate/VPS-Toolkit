@@ -17,7 +17,7 @@ print_version() {
   echo "+------------------------------------------------------------------------+"
   echo "|                 A script to install the redis on Linux                 |"
   echo "+------------------------------------------------------------------------+"
-  echo "|                Version: 1.0.1  Last Updated: 2026-08-06                |"
+  echo "|                Version: 1.0.2  Last Updated: 2026-08-20                |"
   echo "+------------------------------------------------------------------------+"
   echo "|                      https://repos.echocolate.xyz                      |"
   echo "+------------------------------------------------------------------------+"
@@ -157,7 +157,6 @@ add_user() {
     fi
   fi
   [ ! -d "${Redis_Persistence}" ] && mkdir -p "${Redis_Persistence}"
-  chown -R redis:redis "${Redis_Persistence}" && chmod 750 "${Redis_Persistence}"
 }
 
 make_redis() {
@@ -185,8 +184,16 @@ make_redis() {
   make -j `grep 'processor' /proc/cpuinfo | wc -l` all USE_SYSTEMD=yes
   make PREFIX=/usr/local/redis install
   mkdir -p "${Redis_HOME}/etc/"
+  mkdir -p "${Redis_Persistence}"/modules/{redisbloom,redisearch,redisjson,redistimeseries}
   \cp redis.conf "${Redis_HOME}/etc/"
   [ -f 'redis-full.conf' ] && \cp redis-full.conf "${Redis_HOME}/etc/"
+  chmod 644 "${Redis_HOME}/etc/"*.conf
+
+  [[ -f './modules/redisbloom/redisbloom.so' ]] && cp -a ./modules/redisbloom/redisbloom.so  "${Redis_Persistence}/modules/redisbloom/redisbloom.so"
+  [[ -f './modules/redisearch/redisearch.so' ]] && cp -a ./modules/redisearch/redisearch.so "${Redis_Persistence}/modules/redisearch/redisearch.so"
+  [[ -f './modules/redisjson/rejson.so' ]] && cp -a ./modules/redisjson/rejson.so "${Redis_Persistence}/modules/redisjson/rejson.so"
+  [[ -f './modules/redistimeseries/redistimeseries.so' ]] && cp -a ./modules/redistimeseries/redistimeseries.so "${Redis_Persistence}/modules/redistimeseries/redistimeseries.so"
+
   sed -i 's|\(^pidfile /var/run/redis_6379.pid\)|# \1\npidfile /run/redis/redis.pid|g' "${Redis_HOME}/etc/redis.conf"
   sed -i 's|\(^# supervised.*\)|\1\nsupervised systemd|g' "${Redis_HOME}/etc/redis.conf"
   sed -i "s|\(^dir.*\)|# \1\n dir ${Redis_Persistence}/|g" "${Redis_HOME}/etc/redis.conf"
@@ -201,6 +208,10 @@ make_redis() {
 }
 
 install_redis_service() {
+  chown -R redis:redis "${Redis_Persistence}" && chmod 750 "${Redis_Persistence}"
+  \cp "${Redis_Parent_PATH}/bin/VTRedis" /bin/VTRedis
+  chown root:root /bin/VTRedis && chmod +x /bin/VTRedis
+
   cat "${Redis_Parent_PATH}/service/redis.service" > /etc/systemd/system/redis.service
   [ -f "${Redis_HOME}/etc/redis-full.conf" ] && sed -i 's/redis.conf/redis-full.conf/g' /etc/systemd/system/redis.service
   [ "${enable_acl}" = 'y' ] && sed -i 's|\(^ExecStop.*\)|# \1\nExecStop=/bin/kill -s TERM $MAINPID|g' /etc/systemd/system/redis.service

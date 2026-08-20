@@ -10,7 +10,7 @@ Steps to install Redis:
 1. Specify LLVM and Redis version via environment variables
 2. run the `redis.sh`
 
-```shell
+```shell []
 cd Database/
 
 # switch to root first
@@ -18,10 +18,22 @@ sudo su
 
 # LLVM and Redis version, e.g.
 export LLVM_ver='21'
-export redis_ver='8.8.0'
+export redis_ver=''
 
 # install redis
 ./scripts/redis.sh
 ```
 
-> Last Updated: 2026-08-06
+> Last Updated: 2026-08-20
+
+## PostgreSQL
+
+[PostgreSQL](https://www.postgresql.org/) is a powerful, open-source ORDBMS. It has earned a strong reputation for its reliability, feature robustness, and strict adherence to SQL standards, backed by over 35 years of active community development.
+
+```shell []
+# install PostgreSQL
+cd Database/
+sudo ./scripts/postgresql.sh
+```
+
+> Last Updated: 2026-08-20
