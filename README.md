@@ -52,7 +52,7 @@ sudo ./init.sh
 
 Scripts for installing common databases packages.
 
-> Last Updated: 2026-08-06
+> Last Updated: 2026-08-20
 
 ## [Mail](./Mail/README.md)
 

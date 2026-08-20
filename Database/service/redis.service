@@ -1,21 +1,32 @@
 [Unit]
 Description=Advanced key-value store (Redis)
-After=network.target
+After=network-online.target
+Wants=network-online.target
 Documentation=https://redis.io/
 
 [Service]
 User=redis
 Group=redis
 Type=notify
+
 WorkingDirectory=/usr/local/redis
 RuntimeDirectory=redis
 RuntimeDirectoryMode=0750
+
 ExecStart=/usr/local/redis/bin/redis-server /usr/local/redis/etc/redis.conf
 ExecStop=/usr/local/redis/bin/redis-cli shutdown
-Restart=always
+
+Restart=on-failure
 RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 TimeoutStopSec=60s
+
 PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+# ReadWritePaths=/usr/local/redis/data /var/lib/redis
 
 [Install]
 WantedBy=multi-user.target

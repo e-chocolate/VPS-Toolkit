@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+export PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
+
+Redis_HOME='/usr/local/redis'
+Redis_Bin="${Redis_HOME}/bin/redis-cli"
+
+INFO="\e[0;32m[INFO]\e[0m"
+ERROR="\e[0;31m[ERROR]\e[0m"
+
+check_root() {
+  if [ $(id -u) != "0" ]; then
+    echo "Error: You must be root to use this function!"
+    Clean_EXIT_Status 1
+  fi
+}
+
+Verify_Password() {
+  local status=1 n=1
+  while [ $status -ne 0 ] && [ $n -le 5 ]; do
+    ((n++))
+    echo -en "Enter current admin password of Redis (Password will not shown): "
+    read -s Redis_Admin_Password
+    echo
+    export REDISCLI_AUTH="${Redis_Admin_Password}"
+    "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin PING | grep -q "PONG"
+    status=$?
+  done
+  [ $status -eq 0 ] && echo "OK, Redis user<admin> password correct." || {
+    echo -e "${ERROR} Invaild password too many times!"
+    Clean_EXIT_Status "$status"
+  }
+}
+
+enter_user_name() {
+  echo -en "\e[0;33mEnter ACL username: \e[0m"
+  read username
+  if [ -z ${username} ] || [ ${username} = '' ]; then
+    echo -e " ${ERROR} Wrong: No username."
+    exit 1
+  fi
+}
+
+enter_password() {
+  local n=1
+  while [ $n -le 5 ];do
+    ((n++))
+    echo -en "Please enter password: "
+    read db_password
+    if [ "${db_password}" = "" ]; then
+      echo -e "${ERROR} Database Password can't be empty!"
+    elif [[ "${db_password}" == *'|'* ]]; then
+      echo -e "${ERROR} Password can't contain char '|'!"
+    else
+      return 0
+    fi
+  done
+  echo -e "${ERROR} Invaild input too many times! Set password randomly."
+  db_password=$(tr -dc 'A-Za-z0-9_+-' < /dev/urandom | head -c 12)
+}
+
+create_acl_user() {
+  local user="$1"
+  local pd="$2"
+  if [ -z "${user}" ]; then
+    echo -e " ${ERROR} Wrong: No username."
+    return 1
+  fi
+  keys=$3
+  if [ -z "${keys}" ]; then
+    keys=''
+  fi
+  channels=$4
+  if [ -z "${channels}" ]; then
+    channels=''
+  fi
+  commands=$5
+  if [ -z "${commands}" ]; then
+    commands='+@read +@write +@pubsub -flushall -flushdb -config -debug -module -slaveof -save -bgsave'
+  fi
+  cat > /tmp/.redis.tmp <<EOF
+ACL SETUSER ${user} reset on >${pd} ${keys} ${channels} ${commands}
+ACL SAVE
+EOF
+  "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin --pipe < /tmp/.redis.tmp
+  printf "\e[0;32m%-20s : %s\e[0m\n" 'username' 'password'
+  printf "%-20s : %s\n" $1 $pd
+}
+
+Clean_EXIT_Status() {
+  [ -s /tmp/.redis.tmp ] && rm -f /tmp/.redis.tmp || echo -en ""
+  exit $1
+}
+
+add_acl_user() {
+  enter_user_name
+  enter_password
+  create_acl_user "${username}" "${db_password}"
+  Clean_EXIT_Status $?
+}
+
+list_acl_user() {
+  "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin ACL USERS
+}
+
+del_acl_user() {
+  list_acl_user
+  enter_user_name
+  "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin ACL USERS | grep -q "${username}"
+  [ $? -ne 0 ] && {
+    echo -e "${ERROR} ${username} does not exist."
+    return 1
+  }
+  "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin ACL DELUSER "${username}" | grep -q '1' && \
+  "${Redis_Bin}" -h 127.0.0.1 -p 6379 --user admin ACL SAVE | grep -q "OK"
+  return $?
+}
+
+Reset_Admin() {
+  check_root
+  enter_password
+  echo -e "\e[0;32mYour new password\e[0m: ${db_password}"
+  local sha256pd=$(echo -n "${db_password}" | sha256sum | awk '{print $1}')
+  sed -i '/admin/d' "${Redis_HOME}/etc/users.acl"
+  sed -i "1i\user admin on #${sha256pd} ~* &* +@all" "${Redis_HOME}/etc/users.acl"
+  systemctl restart redis
+}
+
+case "$1" in
+  [aA][dD][dD])
+    Verify_Password
+    add_acl_user
+    Clean_EXIT_Status $?
+    ;;
+  [lL][iI][sS][tT])
+    Verify_Password
+    list_acl_user
+    Clean_EXIT_Status $?
+    ;;
+  [dD][eE][lL])
+    Verify_Password
+    del_acl_user
+    Clean_EXIT_Status $?
+    ;;
+  [rR][eE][sS][eE][tT])
+    Reset_Admin
+    Clean_EXIT_Status $?
+    ;;
+  [eE][xX][iI][tT])
+    Clean_EXIT_Status 1
+    ;;
+  *)
+    echo "Usage: {start|stop|restart|reload|kill|status}"
+    echo "Usage: {list|add|del|reset}"
+    Clean_EXIT_Status 1
+    ;;
+esac
