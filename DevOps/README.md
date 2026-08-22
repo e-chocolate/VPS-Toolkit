@@ -38,3 +38,34 @@ sudo ./scripts/code_server.sh [user]
 ```
 
 > Last Updated: 2026-08-16
+
+## Gitea
+
+[Gitea](https://docs.gitea.com/category/installation) is a painless, self-hosted, all-in-one software development service. Run the following commands to install.
+
+```shell []
+cd DevOps
+sudo ./scripts/gitea.sh 
+```
+
+> Last Updated: 2026-08-22
+
+## Fail2Ban
+
+[Fail2Ban](https://github.com/fail2ban/fail2ban) is an intrusion prevention framework for Linux that protects servers from brute-force attacks by monitoring system logs (e.g., SSH, Nginx) for repeated failures.
+
+```shell []
+cd DevOps
+
+# switch to root first
+sudo su
+
+# Add environment variables to choose the jail that you want to enable
+export sshd_jail='y'
+export nginx_jail='y'
+export mail_jail='y'
+
+./scripts/fail2ban.sh 
+```
+
+> Last Updated: 2026-08-22

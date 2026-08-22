@@ -28,7 +28,7 @@ bash <(curl -L https://github.com/e-chocolate/VPS-Toolkit/raw/master/system-init
 
 Provide some interesting functions for Linux.
 
-> Last Updated: 2026-06-13
+> Last Updated: 2026-08-23
 
 ## Init
 
@@ -54,20 +54,26 @@ Scripts for installing common databases packages.
 
 > Last Updated: 2026-08-20
 
+## [DevOps](./DevOps/README.md)
+
+Scripts for installing common DevOps tools(e.g., docker).
+
+> Last Updated: 2026-08-22
+
 ## [Mail](./Mail/README.md)
 
 Scripts for installing MTA, MDA packages.
 
 > Last Updated: 2026-08-09
 
-## [Web](./Web/README.md)
-
-Scripts for installing web hosting stacks.
-
-> Last Updated: 2026-07-19
-
 ## [Tools](./Tools/README.md)
 
 Scripts for installing useful tools.
 
 > Last Updated: 2026-06-14
+
+## [Web](./Web/README.md)
+
+Scripts for installing web hosting stacks.
+
+> Last Updated: 2026-07-19
