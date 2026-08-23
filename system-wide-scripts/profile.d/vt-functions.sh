@@ -41,6 +41,22 @@ is_valid_port() {
   return 0
 }
 
+ssu() {
+  if [ $# -gt 1 ]; then
+    echo "Usage: ssu [user]" >&2
+    return 1
+  fi
+
+  local user="${1:-root}"
+
+  if ! id "$user" >/dev/null 2>&1; then
+    echo "ssu: user '$user' does not exist" >&2
+    return 1
+  fi
+
+  exec sudo -i -u "$user"
+}
+
 sssh() {
   if [ $# -eq 0 ]; then
     echo "Usage: sssh [port] <destination>" >&2

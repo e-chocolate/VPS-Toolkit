@@ -35,8 +35,6 @@ alias myipv6='curl -6 ifconfig.me && echo'
 alias ports='netstat -tulanp || ss -lntp'
 alias ping='ping -c 5'
 
-alias su='sudo -i -u root'
-
 if nano --help 2>&1 | grep -q '\-\-linenumbers'; then
   alias nano='nano --linenumbers'
 fi
