@@ -70,7 +70,7 @@ Scripts for installing MTA, MDA packages.
 
 Scripts for installing useful tools.
 
-> Last Updated: 2026-06-14
+> Last Updated: 2026-08-30
 
 ## [Web](./Web/README.md)
 
