@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -o pipefail
+
 export PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 
 # Check if user is root
@@ -9,6 +11,13 @@ fi
 
 INFO="\e[0;32m[INFO]\e[0m"
 ERROR="\e[0;31m[ERROR]\e[0m"
+
+check_dependencies() {
+  if ! command -v iptables >/dev/null 2>&1; then
+    echo -e "${ERROR} iptables is not installed. Please install it first: apt-get install iptables"
+    return 1
+  fi
+}
 
 print_version() {
   detect_os
@@ -91,9 +100,9 @@ download_docker() {
 
   wget -nv ${docker_base}/containerd.io_${containerd_io_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/containerd.io.deb
   status=$((status + $?))
-  wget -nv ${docker_base}/docker-ce-cli_${docker_ce_cli_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/docker-ce.deb
+  wget -nv ${docker_base}/docker-ce-cli_${docker_ce_cli_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/docker-ce-cli.deb
   status=$((status + $?))
-  wget -nv ${docker_base}/docker-ce_${docker_ce_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/docker-ce-cli.deb
+  wget -nv ${docker_base}/docker-ce_${docker_ce_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/docker-ce.deb
   status=$((status + $?))
   wget -nv ${docker_base}/docker-buildx-plugin_${docker_buildx_plugin_version}~${ID}.${RELEASE}~${CODENAME}_${ARCH}.deb -O /tmp/docker-buildx-plugin.deb
   status=$((status + $?))
@@ -204,6 +213,7 @@ configure_docker() {
 
 install() {
   print_version
+  check_dependencies || return 1
   get_distrib_info
   download_docker && {
     install_docker
