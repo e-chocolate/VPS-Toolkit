@@ -39,6 +39,10 @@ if nano --help 2>&1 | grep -q '\-\-linenumbers'; then
   alias nano='nano --linenumbers'
 fi
 
+alias nft-off='/usr/local/bin/nft-switch off'
+alias nft-on='/usr/local/bin/nft-switch on'
+alias nft-stat='systemctl status nftables --no-pager -l && nft list ruleset'
+
 alias gs='git status'
 alias ga='git add'
 alias gc='git commit'
