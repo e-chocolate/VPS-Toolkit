@@ -46,8 +46,40 @@ backup() {
   cd -
 }
 
-copy() {
+copy_profile() {
   cp -a "${Startup_Current_PATH}"/profile.d/*sh /etc/profile.d/
+}
+
+copy_bin() {
+  local source_file
+  local target_file
+
+  while IFS= read -r -d '' source_file; do
+    target_file="/usr/local/bin/${source_file##*/}"
+
+    if ! cp -a -- "$source_file" "$target_file"; then
+      echo "错误: 无法复制文件：$source_file" >&2
+      return 1
+    fi
+
+    if ! chown "root:root" -- "$target_file"; then
+      echo "错误: 无法设置文件所有者：$target_file" >&2
+      return 1
+    fi
+
+    if ! chmod 755 -- "$target_file"; then
+      echo "错误: 无法设置文件权限：$target_file" >&2
+      return 1
+    fi
+  done < <(
+        find "${Startup_Current_PATH}/bin" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type f \
+            -print0
+  )
+
+  echo "文件复制完成，权限已统一设置为 755"
 }
 
 config() {
@@ -60,7 +92,8 @@ install() {
   print_version
   determine_path
   backup
-  copy
+  copy_profile
+  copy_bin
   config
 }
 

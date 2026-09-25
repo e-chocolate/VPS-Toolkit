@@ -1,0 +1,319 @@
+#!/bin/bash
+
+set -u
+set -o pipefail
+
+# ================= 配置区 =================
+BACKUP_DIR="/etc/nftables"
+BACKUP_FILE="$BACKUP_DIR/ruleset.backup.nft"
+LOCK_FILE="/run/lock/nftables-toggle.lock"
+SERVICE_NAME="nftables"
+# ==========================================
+
+# 默认确保新建文件仅 root 可访问
+umask 077
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+info() {
+    printf '%b\n' "${YELLOW}[*] $*${NC}"
+}
+
+success() {
+    printf '%b\n' "${GREEN}[+] $*${NC}"
+}
+
+warning() {
+    printf '%b\n' "${YELLOW}[!] $*${NC}"
+}
+
+error() {
+    printf '%b\n' "${RED}[x] $*${NC}" >&2
+}
+
+# 临时文件，由 cleanup 统一处理
+TEMP_FILE=""
+
+cleanup() {
+    if [ -n "$TEMP_FILE" ] && [ -e "$TEMP_FILE" ]; then
+        rm -f -- "$TEMP_FILE"
+    fi
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# 检查 root 权限
+if [ "${EUID}" -ne 0 ]; then
+    error "请使用 root 权限运行此脚本。"
+    exit 1
+fi
+
+# flock 通常由 Debian 的 util-linux 软件包提供
+if ! command -v flock >/dev/null 2>&1; then
+    error "未找到 flock 命令，请安装 util-linux。"
+    exit 1
+fi
+
+# 防止两个脚本实例同时操作规则和备份
+exec 9>"$LOCK_FILE" || {
+    error "无法打开锁文件：$LOCK_FILE"
+    exit 1
+}
+
+if ! flock -n 9; then
+    error "已有另一个实例正在运行。"
+    exit 1
+fi
+
+# 检查 systemd 服务是否处于 active 状态
+is_service_active() {
+    systemctl is-active --quiet "$SERVICE_NAME"
+}
+
+# 检查当前 ruleset 是否为空
+is_ruleset_empty() {
+    local output
+
+    if ! output=$(nft list ruleset); then
+        error "无法读取当前 nftables 规则。"
+        return 2
+    fi
+
+    [ -z "${output//[[:space:]]/}" ]
+}
+
+# 验证备份文件安全性
+validate_backup_file() {
+    local owner mode
+
+    if [ -L "$BACKUP_FILE" ]; then
+        error "备份路径是符号链接，拒绝使用：$BACKUP_FILE"
+        return 1
+    fi
+
+    if [ ! -f "$BACKUP_FILE" ]; then
+        error "备份路径不是普通文件：$BACKUP_FILE"
+        return 1
+    fi
+
+    if ! owner=$(stat -c '%u' -- "$BACKUP_FILE"); then
+        error "无法读取备份文件所有者。"
+        return 1
+    fi
+
+    if [ "$owner" -ne 0 ]; then
+        error "备份文件不属于 root，拒绝使用。"
+        return 1
+    fi
+
+    if ! mode=$(stat -c '%a' -- "$BACKUP_FILE"); then
+        error "无法读取备份文件权限。"
+        return 1
+    fi
+
+    if [ "$mode" != "600" ]; then
+        error "备份文件权限必须是 600，当前为 $mode。"
+        return 1
+    fi
+
+    if ! nft --check --file "$BACKUP_FILE"; then
+        error "备份规则语法或事务校验失败。"
+        return 1
+    fi
+}
+
+# 创建当前运行规则的备份
+create_backup() {
+    if ! install -d -o root -g root -m 700 "$BACKUP_DIR"; then
+        error "无法创建或设置备份目录：$BACKUP_DIR"
+        return 1
+    fi
+
+    if [ -e "$BACKUP_FILE" ] || [ -L "$BACKUP_FILE" ]; then
+        error "检测到尚未恢复的备份文件：$BACKUP_FILE"
+        warning "为避免覆盖原备份，本次操作已取消。"
+        warning "请检查当前服务和规则状态："
+        printf '  systemctl status %s\n' "$SERVICE_NAME"
+        printf '  nft list ruleset\n'
+        return 1
+    fi
+
+    TEMP_FILE=$(mktemp "$BACKUP_DIR/.ruleset.backup.XXXXXX") || {
+        error "无法创建临时备份文件。"
+        return 1
+    }
+
+    # flush ruleset 与导出的规则将在恢复时作为同一个事务提交
+    if ! {
+        printf '%s\n' "flush ruleset"
+        nft list ruleset
+    } > "$TEMP_FILE"; then
+        error "导出 nftables 规则失败。"
+        return 1
+    fi
+
+    if ! nft --check --file "$TEMP_FILE"; then
+        error "导出的规则未通过恢复校验。"
+        return 1
+    fi
+
+    if ! chmod 600 "$TEMP_FILE"; then
+        error "无法设置临时备份文件权限。"
+        return 1
+    fi
+
+    # 同一文件系统内原子重命名，避免留下不完整的正式备份
+    if ! mv -- "$TEMP_FILE" "$BACKUP_FILE"; then
+        error "无法保存正式备份文件。"
+        return 1
+    fi
+
+    TEMP_FILE=""
+    return 0
+}
+
+# 关闭防火墙
+do_off() {
+    info "正在备份当前规则并关闭 nftables 防火墙……"
+
+    if ! create_backup; then
+        exit 1
+    fi
+
+    success "当前运行规则已备份至 $BACKUP_FILE"
+
+    # Debian 的 nftables.service 在 ExecStop 中执行 nft flush ruleset。
+    # 如果服务本来就没有运行，则由脚本直接清空规则。
+    if is_service_active; then
+        info "正在停止 $SERVICE_NAME 服务……"
+
+        if ! systemctl stop "$SERVICE_NAME"; then
+            error "停止 $SERVICE_NAME 服务失败。"
+            warning "备份文件已保留：$BACKUP_FILE"
+            warning "请执行 nft list ruleset 检查当前实际规则。"
+            exit 1
+        fi
+
+        success "$SERVICE_NAME 服务已停止。"
+    else
+        warning "$SERVICE_NAME 服务原本未处于 active 状态。"
+        info "正在直接清空当前 nftables 规则……"
+
+        if ! nft flush ruleset; then
+            error "清空 nftables 规则失败。"
+            warning "备份文件已保留：$BACKUP_FILE"
+            exit 1
+        fi
+    fi
+
+    # 最终验证实际内核规则，而不是只依赖 systemd 状态
+    if is_ruleset_empty; then
+        success "当前 nftables ruleset 已清空。"
+    else
+        check_status=$?
+
+        if [ "$check_status" -eq 2 ]; then
+            error "无法确认当前 nftables ruleset 是否为空。"
+        else
+            error "操作完成后仍检测到 nftables 规则。"
+        fi
+
+        warning "备份文件已保留：$BACKUP_FILE"
+        exit 1
+    fi
+
+    printf '%b\n' "${GREEN}[✓] nftables 防火墙已临时关闭。${NC}"
+    warning "该操作不会禁用开机启动；系统重启后仍会加载 /etc/nftables.conf。"
+}
+
+# 恢复防火墙
+do_on() {
+    info "正在准备恢复 nftables 防火墙……"
+
+    if [ ! -e "$BACKUP_FILE" ] && [ ! -L "$BACKUP_FILE" ]; then
+        warning "未找到备份文件：$BACKUP_FILE"
+        warning "无法判断规则是否已经恢复，请检查："
+        printf '  systemctl status %s\n' "$SERVICE_NAME"
+        printf '  nft list ruleset\n'
+        exit 0
+    fi
+
+    # 必须在启动服务前完成校验，避免发现备份损坏时已经改变规则
+    if ! validate_backup_file; then
+        warning "未修改当前服务和规则状态。"
+        exit 1
+    fi
+
+    success "备份文件校验通过。"
+
+    # Debian 启动 nftables.service 时会先加载 /etc/nftables.conf。
+    if ! is_service_active; then
+        info "正在启动 $SERVICE_NAME 服务……"
+        warning "此步骤会先加载 /etc/nftables.conf。"
+
+        if ! systemctl start "$SERVICE_NAME"; then
+            error "启动 $SERVICE_NAME 服务失败。"
+            warning "备份文件已保留：$BACKUP_FILE"
+            exit 1
+        fi
+
+        if ! is_service_active; then
+            error "$SERVICE_NAME 未进入 active 状态。"
+            warning "备份文件已保留：$BACKUP_FILE"
+            exit 1
+        fi
+
+        success "$SERVICE_NAME 服务已启动。"
+    else
+        warning "$SERVICE_NAME 服务已经处于 active 状态。"
+    fi
+
+    info "正在原子应用关闭前保存的规则……"
+
+    if ! nft --file "$BACKUP_FILE"; then
+        error "备份规则事务提交失败。"
+        warning "备份文件已保留：$BACKUP_FILE"
+        warning "当前运行规则可能仍来自 /etc/nftables.conf，请立即检查："
+        printf '  nft list ruleset\n'
+        exit 1
+    fi
+
+    # 规则提交成功后再删除备份
+    if ! rm -f -- "$BACKUP_FILE"; then
+        error "规则已恢复，但无法删除备份文件：$BACKUP_FILE"
+        warning "请手动删除该文件，否则下次执行 off 会被拒绝。"
+        exit 1
+    fi
+
+    printf '%b\n' "${GREEN}[✓] nftables 防火墙规则已成功恢复。${NC}"
+    warning "当前规则来自运行时备份；重启或 reload 后仍会加载 /etc/nftables.conf。"
+}
+
+show_usage() {
+    printf '用法: %s {off|on}\n' "$0"
+    printf '\n'
+    printf '  off  备份当前运行规则，停止服务并清空 ruleset\n'
+    printf '  on   启动服务，并恢复关闭前备份的运行规则\n'
+    printf '\n'
+    printf '备份文件: %s\n' "$BACKUP_FILE"
+    printf '持久配置: /etc/nftables.conf\n'
+}
+
+case "${1:-}" in
+    off|stop|down)
+        do_off
+        ;;
+    on|start|up)
+        do_on
+        ;;
+    *)
+        show_usage
+        exit 1
+        ;;
+esac
