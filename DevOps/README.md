@@ -2,9 +2,9 @@
 
 DevOps is a cultural philosophy, set of practices, and tools that merges software development (Dev) and IT operations (Ops) teams to shorten the development lifecycle.
 
-## Docker
+## Docker (rootful with user namespace remapping)
 
-[Docker](https://www.docker.com/) is an essential tool in DevOps. Follow the following steps to install.
+[Docker](https://www.docker.com/) is an essential tool in DevOps. The existing `docker.sh` installer runs the Docker daemon as root and enables user namespace remapping. Follow these steps to install it.
 
 1. Go to [Docker packages](https://download.docker.com/linux/) to determine the version of packages that you want to install.
 2. Add the version info to the environment variables(Optional).
@@ -26,6 +26,45 @@ export docker_compose_plugin_ver='5.4.0-1'
 ```
 
 > Last Updated: 2026-08-16
+
+## Rootless Docker
+
+`docker-rootless.sh` installs Rootless Docker on Debian or Ubuntu. Run it as the user who will own the Docker daemon, or use `sudo` and specify an existing or new target user.
+
+```shell []
+cd DevOps
+
+# Install for the current user (recommended)
+./scripts/docker-rootless.sh
+
+# Or install for a specified user
+sudo ./scripts/docker-rootless.sh alice
+```
+
+Optional environment variables:
+
+| Variable | Description |
+| --- | --- |
+| `ROOTLESS_USER` | Target user; a command-line username takes precedence. |
+| `DOCKER_VERSION` | Docker Engine version. Default: `29.8.1-1`. |
+| `DOCKER_CLI_VERSION` | Docker CLI version. Default: `DOCKER_VERSION`. |
+| `DOCKER_ROOTLESS_EXTRAS_VERSION` | Rootless extras version. Default: `DOCKER_VERSION`. |
+| `CONTAINERD_IO_VERSION` | containerd.io version. Default: `2.3.6-1`. |
+| `DOCKER_BUILDX_VERSION` | Buildx version. Default: `0.37.1-1`. |
+| `DOCKER_COMPOSE_VERSION` | Compose version. Default: `5.5.1-1`. |
+| `ROOTFUL_DOCKER_MODE` | Rootful Docker handling: `coexist`, `stop`, or `abort`. |
+| `REMOVE_CONFLICTING_PACKAGES` | Set to `1` to approve removal of detected conflicting packages without prompting. |
+
+For example:
+
+```shell []
+sudo env ROOTLESS_USER=alice ROOTFUL_DOCKER_MODE=coexist \
+  ./scripts/docker-rootless.sh
+```
+
+Only set `REMOVE_CONFLICTING_PACKAGES=1` after reviewing the packages that will be removed. Run `./scripts/docker-rootless.sh --help` for details.
+
+> Last Updated: 2026-09-30
 
 ## Code-Server
 
