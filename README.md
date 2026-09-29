@@ -56,9 +56,11 @@ Scripts for installing common databases packages.
 
 ## [DevOps](./DevOps/README.md)
 
-Scripts for installing common DevOps tools(e.g., docker).
+Scripts for installing common DevOps tools, including rootful Docker with user namespace remapping and a separate Rootless Docker daemon managed as a systemd user service.
 
-> Last Updated: 2026-08-22
+The Rootless Docker installer supports existing users or a dedicated `nologin` system user, explicit coexist/stop handling for a system-wide Docker daemon, pinned package versions, subordinate UID/GID allocation, and post-installation verification. Review its system-wide package and service changes in the [DevOps documentation](./DevOps/README.md#rootless-docker) before running it.
+
+> Last Updated: 2026-09-30
 
 ## [Mail](./Mail/README.md)
 
