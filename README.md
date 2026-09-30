@@ -56,11 +56,11 @@ Scripts for installing common databases packages.
 
 ## [DevOps](./DevOps/README.md)
 
-Scripts for installing common DevOps tools, including rootful Docker with user namespace remapping and a separate Rootless Docker daemon managed as a systemd user service.
+Scripts for installing common DevOps tools, including rootful Docker with user namespace remapping, a separate Rootless Docker daemon, and a binary Gitea Runner systemd service backed by Rootless Docker.
 
-The Rootless Docker installer supports existing users or a dedicated `nologin` system user, explicit coexist/stop handling for a system-wide Docker daemon, pinned package versions, subordinate UID/GID allocation, and post-installation verification. Review its system-wide package and service changes in the [DevOps documentation](./DevOps/README.md#rootless-docker) before running it.
+The Rootless Docker installer supports existing users or a dedicated `nologin` system user, explicit coexist/stop handling for a system-wide Docker daemon, pinned package versions, subordinate UID/GID allocation, and post-installation verification. The Gitea Runner installer adds checksum-verified binary installation, optional registration and local monitoring, and a hardened configuration that does not expose the Rootless Docker socket to Job containers. Review the installation order and system changes in the [DevOps documentation](./DevOps/README.md#gitea-runner-with-rootless-docker) before running it.
 
-> Last Updated: 2026-09-30
+> Last Updated: 2026-10-01
 
 ## [Mail](./Mail/README.md)
 

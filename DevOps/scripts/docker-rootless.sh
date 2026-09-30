@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-readonly SCRIPT_VERSION="1.8.3"
+readonly SCRIPT_VERSION="1.8.4"
 readonly MIN_SUBID_COUNT=65536
 
 if [[ -t 1 ]]; then
@@ -44,8 +44,8 @@ usage() {
 
 使用 root 或 sudo 运行时，可以通过命令行参数或 ROOTLESS_USER 指定目标用户。
 如果没有指定，脚本会从终端读取用户名。用户已存在时会验证现有账号；
-用户不存在时会创建一个使用 /sbin/nologin 的专用系统用户，并显式创建
-/home/<用户名> 主目录，然后执行相同验证。
+用户不存在时会创建一个使用 /sbin/nologin 的专用系统用户，并由 useradd
+按照发行版默认规则创建 /home/<用户名> 主目录，然后执行相同验证。
 
 也可以由 root 为使用 nologin/false shell 的现有服务账号安装。脚本不会依赖
 交互式登录，而会实际验证该账号的 HOME、systemd 用户管理器、运行时目录和 DBus。
@@ -192,7 +192,7 @@ readonly OS_CODENAME="$VERSION_CODENAME"
 [[ "$VERSION_ID" =~ ^[A-Za-z0-9._-]+$ ]] || die "VERSION_ID 包含非法字符。"
 readonly OS_VERSION_ID="$VERSION_ID"
 
-for command_name in apt-get awk chmod chown dpkg dpkg-deb dpkg-query getent loginctl mkdir mktemp systemctl useradd usermod; do
+for command_name in apt-get awk chmod dpkg dpkg-deb dpkg-query getent loginctl mktemp systemctl useradd usermod; do
   command -v "$command_name" >/dev/null 2>&1 || die "缺少必要命令：${command_name}"
 done
 
@@ -246,8 +246,9 @@ else
   [[ -x /sbin/nologin ]] || die "无法创建用户：未找到 /sbin/nologin。"
   new_user_home="/home/${requested_user}"
 
-  [[ ! -e "$new_user_home" || -d "$new_user_home" ]] \
-    || die "用户主目录路径已存在，但不是目录：${new_user_home}"
+  if [[ -e "$new_user_home" || -L "$new_user_home" ]]; then
+    die "用户主目录路径已存在：${new_user_home}"
+  fi
   target_user_needs_creation=1
   target_user_plan="创建专用系统用户 ${requested_user}（HOME ${new_user_home}，SHELL /sbin/nologin）"
 fi
@@ -325,22 +326,14 @@ if (( target_user_needs_creation == 1 )); then
   info "用户 ${requested_user} 不存在，正在创建 Rootless Docker 专用系统用户。"
   if getent group "$requested_user" >/dev/null 2>&1; then
     info "复用已存在的同名用户组 ${requested_user}。"
-    as_root useradd --system --no-create-home --home-dir "$new_user_home" \
+    as_root useradd --system --create-home --home-dir "$new_user_home" \
       --gid "$requested_user" --shell /sbin/nologin "$requested_user"
   else
-    as_root useradd --system --no-create-home --home-dir "$new_user_home" \
+    as_root useradd --system --create-home --home-dir "$new_user_home" \
       --user-group --shell /sbin/nologin "$requested_user"
   fi
   load_target_user "$requested_user" \
     || die "已执行 useradd，但仍无法查询用户：${requested_user}"
-
-  if [[ ! -e "$new_user_home" ]]; then
-    info "创建用户主目录 ${new_user_home}。"
-    as_root mkdir -- "$new_user_home"
-    as_root chown "${requested_user}:${requested_user}" "$new_user_home"
-  elif [[ ! -d "$new_user_home" ]]; then
-    die "用户主目录路径已存在，但不是目录：${new_user_home}"
-  fi
   target_user_created=1
   validate_target_user
 fi

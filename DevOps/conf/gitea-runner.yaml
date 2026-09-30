@@ -1,0 +1,34 @@
+# Gitea Runner configuration for a binary Runner that connects to the same
+# Unix user's Rootless Docker daemon. The systemd unit installed by
+# scripts/gitea-runner.sh supplies DOCKER_HOST=unix:///run/user/<UID>/docker.sock.
+
+log:
+  level: info
+
+runner:
+  # Keep registration state outside the user's home and stable across upgrades.
+  file: /var/lib/gitea-runner/.runner
+  capacity: 1
+  timeout: "3h"
+  # Must match TimeoutStopSec in the generated systemd unit.
+  shutdown_timeout: "10m"
+  insecure: false
+  labels:
+    - "ubuntu-latest:docker://docker.gitea.com/runner-images:ubuntu-latest"
+
+host:
+  # Store downloaded remote Actions in the writable Runner state directory.
+  workdir_parent: /var/lib/gitea-runner/.cache/act
+
+cache:
+  enabled: false
+
+container:
+  # Auto-detect DOCKER_HOST from the Runner service, but never mount the
+  # Rootless Docker socket into Job, service, or Action containers.
+  docker_host: "-"
+  privileged: false
+  valid_volumes: []
+  bind_workdir: false
+  require_docker: true
+  docker_timeout: "30s"

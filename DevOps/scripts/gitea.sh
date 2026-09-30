@@ -61,7 +61,7 @@ download_gitea() {
   echo -e "${INFO} Install gitea v${latest}"
   wget -nv "https://dl.gitea.com/gitea/${latest}/gitea-${latest}-linux-${ARCH}" -O /tmp/gitea
   status=$((status + $?))
-  wget -nv "https://raw.githubusercontent.com/go-gitea/gitea/refs/heads/release/v${latest%.*}/custom/conf/app.example.ini" -O /tmp/app.ini
+  wget -nv "https://raw.githubusercontent.com/go-gitea/gitea/refs/tags/v${latest}/custom/conf/app.example.ini" -O /tmp/app.ini
   status=$((status + $?))
   [ "${status}" -ne 0 ] && {
     echo -e "${ERROR} Download Gitea failed."
