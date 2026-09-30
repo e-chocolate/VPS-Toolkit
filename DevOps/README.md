@@ -64,7 +64,62 @@ sudo env ROOTLESS_USER=alice ROOTFUL_DOCKER_MODE=coexist \
 
 Only set `REMOVE_CONFLICTING_PACKAGES=1` after reviewing the packages that will be removed. Run `./scripts/docker-rootless.sh --help` for details.
 
-> Last Updated: 2026-09-30
+Docker's package versions are not published uniformly for every architecture. Before using `armhf`, `ppc64el`, or `s390x`, check the packages available for that distribution and override the pinned version variables when necessary.
+
+When the target user does not exist, the script creates a dedicated `nologin` system user and lets `useradd` create `/home/<user>` with the distribution defaults. Installation stops before creating the user if that path already exists.
+
+> Last Updated: 2026-10-01
+
+## Gitea Runner with Rootless Docker
+
+`gitea-runner.sh` installs the latest stable Gitea Runner binary, verifies its published SHA-256 checksum, registers it when requested, and creates `gitea-runner.service`. The service and its Job containers use the same Unix user's Rootless Docker daemon.
+
+Install `jq`, then install Rootless Docker before installing the Runner:
+
+```shell []
+cd DevOps
+
+sudo apt-get update
+sudo apt-get install -y jq
+
+# Create or configure the dedicated user and its Rootless Docker daemon
+sudo ./scripts/docker-rootless.sh gitea-runner
+
+# Registration URL and token are requested before installation starts
+sudo ./scripts/gitea-runner.sh --register \
+  --user gitea-runner \
+  --instance-url https://gitea.example.com/ \
+  --disable-health-metrics
+```
+
+For an upgrade that keeps `/var/lib/gitea-runner/.runner`:
+
+```shell []
+sudo ./scripts/gitea-runner.sh --skip-register \
+  --user gitea-runner \
+  --disable-health-metrics
+```
+
+The default configuration is copied from `conf/gitea-runner.yaml` to `/etc/gitea-runner/config.yaml`. It runs `ubuntu-latest` Jobs in `docker.gitea.com/runner-images:ubuntu-latest`, does not mount the Rootless Docker socket into Job containers, disables privileged containers and host-volume mounts, and disables the Actions cache. Use `--enable-health-metrics` to add local `/metrics`, `/healthz`, and `/readyz` endpoints on `127.0.0.1:9101`.
+
+Optional environment variables:
+
+| Variable | Description |
+| --- | --- |
+| `GITEA_RUNNER_USER` | Unix user shared by the Runner service and Rootless Docker. |
+| `GITEA_RUNNER_VERSION` | Exact Runner version; otherwise the latest stable release is selected. |
+| `GITEA_RUNNER_REGISTRATION_TOKEN` | Registration token for non-interactive installation. |
+
+Use this Runner only for trusted repositories. Job containers share the selected user's Docker daemon even though its socket is not mounted into them. Run `./scripts/gitea-runner.sh --help` for all flags.
+
+Verify the service and its Rootless Docker connection from the repository root:
+
+```shell []
+sudo systemctl status gitea-runner.service
+sudo bash Scripts/show-docker-info.sh
+```
+
+> Last Updated: 2026-10-01
 
 ## Code-Server
 
